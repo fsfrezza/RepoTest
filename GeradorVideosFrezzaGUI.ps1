@@ -6262,6 +6262,9 @@ function Stop-SelectedSubtitleAudio {
             $script:LegPlayer.controls.stop()
         }
         Reset-LegendPlaybackClock -Seconds 0
+        $script:LegToggleMarkOpen = $false
+        $script:LegToggleMarkRowIndex = -1
+        try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
     }
     catch {
     }
@@ -6464,26 +6467,60 @@ function Seek-SubtitleAudioToGridTime {
 
     $Item = Get-SelectedSubtitleItem
     if ($null -eq $Item) { return }
-
-    $WasPlaying = $false
-    try {
-        if ($null -ne $script:LegPlayer -and [int]$script:LegPlayer.playState -eq 3) {
-            $WasPlaying = $true
-        }
-    }
-    catch { }
-
     if (-not (Set-LegendPlayerFile -Path ([string]$Item.FilePath))) { return }
 
     $Seconds = Parse-SrtTime -Text $TimeText
-    Set-LegendPlayerPosition -Seconds $Seconds
+    if ($Seconds -lt 0) { $Seconds = 0.0 }
+
+    $WasPlaying = $false
+    try { $WasPlaying = ([int]$script:LegPlayer.playState -eq 3) } catch { }
+
+    # O WMP pode aplicar currentPosition de forma assíncrona. Pausar antes do seek
+    # e aguardar a posição convergir evita o duplo clique cair às vezes antes/depois.
+    try {
+        if ($WasPlaying) { $script:LegPlayer.controls.pause() }
+    } catch { }
+
+    try {
+        $script:LegPlayer.controls.currentPosition = [double]$Seconds
+
+        $Confirmed = [double]$Seconds
+        for ($i = 0; $i -lt 20; $i++) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 15
+            try {
+                $MediaPos = [double]$script:LegPlayer.controls.currentPosition
+                if ([Math]::Abs($MediaPos - $Seconds) -le 0.20) {
+                    $Confirmed = $MediaPos
+                    break
+                }
+            } catch { }
+        }
+
+        Reset-LegendPlaybackClock -Seconds $Confirmed
+    }
+    catch {
+        Set-LegendPlayerPosition -Seconds $Seconds
+    }
 
     if ($RowIndex -ge 0 -and $RowIndex -lt $GridLegendas.Rows.Count -and -not $GridLegendas.Rows[$RowIndex].IsNewRow) {
-        $GridLegendas.Rows[$RowIndex].Selected = $true
+        try {
+            $GridLegendas.ClearSelection()
+            $GridLegendas.Rows[$RowIndex].Selected = $true
+            $GridLegendas.CurrentCell = $GridLegendas.Rows[$RowIndex].Cells["Texto"]
+        } catch { }
     }
 
     if ($WasPlaying) {
-        try { $script:LegPlayer.controls.play() } catch { }
+        try {
+            $script:LegPlayer.controls.play()
+            for ($i = 0; $i -lt 25; $i++) {
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 10
+                try { if ([int]$script:LegPlayer.playState -eq 3) { break } } catch { }
+            }
+            Start-LegendPlaybackClockFromPlayer
+        } catch { }
     }
 }
 
@@ -6768,6 +6805,89 @@ function Set-SelectedSubtitleLineEnd {
     $CurrentIndex = $Row.Index
     Update-ManualMarkerStatus
     Select-NextSubtitleStartCell -CurrentIndex $CurrentIndex
+}
+
+function Invoke-AlternatingSubtitleMark {
+    if ($null -eq $script:LegToggleMarkOpen) { $script:LegToggleMarkOpen = $false }
+    if ($null -eq $script:LegToggleMarkRowIndex) { $script:LegToggleMarkRowIndex = -1 }
+
+    # Primeira pressão: abre a linha atual.
+    if (-not [bool]$script:LegToggleMarkOpen) {
+        $Row = Get-OrCreateSelectedSubtitleGridRow -CreateWhenEmpty
+        if ($null -eq $Row) { return }
+
+        $Pos = Get-LegendPlayerPosition
+        $Row.Cells["Inicio"].Value = Format-SrtTime -Seconds $Pos
+
+        $FimAtual = [string]$Row.Cells["Fim"].Value
+        if (-not [string]::IsNullOrWhiteSpace($FimAtual)) {
+            $FimSeg = Parse-SrtTime -Text $FimAtual
+            if ($FimSeg -le $Pos) {
+                $Row.Cells["Fim"].Value = Format-SrtTime -Seconds ($Pos + 0.5)
+            }
+        }
+
+        $script:LegToggleMarkOpen = $true
+        $script:LegToggleMarkRowIndex = [int]$Row.Index
+        try { $ButtonLegAlternarMarcacao.Tag = "Fechar" } catch { }
+        Update-ManualMarkerStatus
+        return
+    }
+
+    # Segunda pressão: fecha exatamente a linha que foi aberta, mesmo que
+    # a seleção automática da reprodução tenha mudado a linha selecionada.
+    $Index = [int]$script:LegToggleMarkRowIndex
+    if ($Index -lt 0 -or $Index -ge $GridLegendas.Rows.Count -or $GridLegendas.Rows[$Index].IsNewRow) {
+        $script:LegToggleMarkOpen = $false
+        $script:LegToggleMarkRowIndex = -1
+        try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
+        return
+    }
+
+    $Row = $GridLegendas.Rows[$Index]
+    $Pos = Get-LegendPlayerPosition
+    $InicioAtual = [string]$Row.Cells["Inicio"].Value
+    $InicioSeg = 0.0
+
+    if ([string]::IsNullOrWhiteSpace($InicioAtual)) {
+        $Row.Cells["Inicio"].Value = Format-SrtTime -Seconds $Pos
+        $InicioSeg = $Pos
+    }
+    else {
+        $InicioSeg = Parse-SrtTime -Text $InicioAtual
+    }
+
+    if ($Pos -le $InicioSeg) { $Pos = $InicioSeg + 0.05 }
+    $Row.Cells["Fim"].Value = Format-SrtTime -Seconds $Pos
+
+    $script:LegToggleMarkOpen = $false
+    $script:LegToggleMarkRowIndex = -1
+    try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
+
+    # Deixa a próxima linha pronta para a próxima pressão de |, sem entrar
+    # no modo de edição (que bloquearia a seleção automática da reprodução).
+    $NextIndex = $Index + 1
+    $RealCount = Get-SubtitleGridRowCount
+    if ($NextIndex -ge $RealCount) {
+        try {
+            $GridLegendas.CurrentCell = $Row.Cells["Texto"]
+            $NewRow = Add-BlankSubtitleGridLine
+            if ($null -ne $NewRow) { $NextIndex = $NewRow.Index }
+        } catch { }
+    }
+
+    if ($NextIndex -ge 0 -and $NextIndex -lt $GridLegendas.Rows.Count -and -not $GridLegendas.Rows[$NextIndex].IsNewRow) {
+        try {
+            $GridLegendas.ClearSelection()
+            $GridLegendas.Rows[$NextIndex].Selected = $true
+            $GridLegendas.CurrentCell = $GridLegendas.Rows[$NextIndex].Cells["Texto"]
+            if (-not $GridLegendas.Rows[$NextIndex].Displayed) {
+                $GridLegendas.FirstDisplayedScrollingRowIndex = [Math]::Max(0, $NextIndex - 2)
+            }
+        } catch { }
+    }
+
+    Update-ManualMarkerStatus
 }
 
 function Update-SubtitleGridFromManualMarks {
@@ -9523,7 +9643,7 @@ $TextLegArquivoSrt.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDow
 
 $ButtonLegPrepararMarcacao = New-Object System.Windows.Forms.Button
 $ButtonLegPrepararMarcacao.Text = "["
-$ButtonLegPrepararMarcacao.Location = New-Object System.Drawing.Point(15, 85)
+$ButtonLegPrepararMarcacao.Location = New-Object System.Drawing.Point(340, 85)
 $ButtonLegPrepararMarcacao.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegPrepararMarcacao.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegPrepararMarcacao.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9531,7 +9651,7 @@ $ButtonLegPrepararMarcacao.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $ButtonLegVoltar = New-Object System.Windows.Forms.Button
 $ButtonLegVoltar.Text = "⏪"
-$ButtonLegVoltar.Location = New-Object System.Drawing.Point(80, 85)
+$ButtonLegVoltar.Location = New-Object System.Drawing.Point(15, 85)
 $ButtonLegVoltar.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegVoltar.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegVoltar.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9539,7 +9659,7 @@ $ButtonLegVoltar.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $ButtonLegParar = New-Object System.Windows.Forms.Button
 $ButtonLegParar.Text = "⏹"
-$ButtonLegParar.Location = New-Object System.Drawing.Point(145, 85)
+$ButtonLegParar.Location = New-Object System.Drawing.Point(80, 85)
 $ButtonLegParar.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegParar.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegParar.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9547,7 +9667,7 @@ $ButtonLegParar.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $ButtonLegTocar = New-Object System.Windows.Forms.Button
 $ButtonLegTocar.Text = "▶"
-$ButtonLegTocar.Location = New-Object System.Drawing.Point(210, 85)
+$ButtonLegTocar.Location = New-Object System.Drawing.Point(145, 85)
 $ButtonLegTocar.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegTocar.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegTocar.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9555,7 +9675,7 @@ $ButtonLegTocar.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $ButtonLegPausar = New-Object System.Windows.Forms.Button
 $ButtonLegPausar.Text = "⏸"
-$ButtonLegPausar.Location = New-Object System.Drawing.Point(275, 85)
+$ButtonLegPausar.Location = New-Object System.Drawing.Point(210, 85)
 $ButtonLegPausar.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegPausar.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegPausar.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9563,7 +9683,7 @@ $ButtonLegPausar.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $ButtonLegAvancar = New-Object System.Windows.Forms.Button
 $ButtonLegAvancar.Text = "⏩"
-$ButtonLegAvancar.Location = New-Object System.Drawing.Point(340, 85)
+$ButtonLegAvancar.Location = New-Object System.Drawing.Point(275, 85)
 $ButtonLegAvancar.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegAvancar.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegAvancar.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -9576,6 +9696,15 @@ $ButtonLegMarcarLinha.Size = New-Object System.Drawing.Size(60, 32)
 $ButtonLegMarcarLinha.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
 $ButtonLegMarcarLinha.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $ButtonLegMarcarLinha.BackColor = [System.Drawing.Color]::WhiteSmoke
+
+$ButtonLegAlternarMarcacao = New-Object System.Windows.Forms.Button
+$ButtonLegAlternarMarcacao.Text = "|"
+$ButtonLegAlternarMarcacao.Location = New-Object System.Drawing.Point(470, 85)
+$ButtonLegAlternarMarcacao.Size = New-Object System.Drawing.Size(60, 32)
+$ButtonLegAlternarMarcacao.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold)
+$ButtonLegAlternarMarcacao.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$ButtonLegAlternarMarcacao.BackColor = [System.Drawing.Color]::WhiteSmoke
+$ButtonLegAlternarMarcacao.Tag = "Abrir"
 
 $ButtonLegDesfazerMarcacao = New-Object System.Windows.Forms.Button
 $ButtonLegDesfazerMarcacao.Text = "Desfazer"
@@ -9655,6 +9784,7 @@ $GroupLegEditor.Controls.AddRange(@(
     $ButtonLegAvancar,
     $ButtonLegPrepararMarcacao,
     $ButtonLegMarcarLinha,
+    $ButtonLegAlternarMarcacao,
     $ButtonLegDesfazerMarcacao,
     $LabelLegMarcacaoStatus,
     $GridLegendas,
@@ -10454,6 +10584,10 @@ $ButtonLegPrepararMarcacao.Add_Click({
 
 $ButtonLegMarcarLinha.Add_Click({
     Set-SelectedSubtitleLineEnd
+})
+
+$ButtonLegAlternarMarcacao.Add_Click({
+    Invoke-AlternatingSubtitleMark
 })
 
 $ButtonLegDesfazerMarcacao.Add_Click({
