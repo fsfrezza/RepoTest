@@ -1071,9 +1071,12 @@ function Update-MainLayout {
             Set-ControlBoundsSafe -Control $LabelGrupoGeracao -X 15 -Y 18 -W 180 -H 18
             Set-ControlBoundsSafe -Control $ButtonEscanear -X 15 -Y 38 -W 220 -H 34
             Set-ControlBoundsSafe -Control $ButtonGerarTodos -X 255 -Y 38 -W 230 -H 34
-            $ProgW = [Math]::Max(160, $GroupAcoes.ClientSize.Width - 760)
-            Set-ControlBoundsSafe -Control $ProgressEscanear -X 505 -Y 44 -W $ProgW -H 20
-            Set-ControlBoundsSafe -Control $LabelProgressoEscanear -X (515 + $ProgW) -Y 42 -W 230 -H 24
+            $StatusX = 505
+            $StatusW = 285
+            $ProgX = $StatusX + $StatusW + 10
+            $ProgW = [Math]::Max(120, $GroupAcoes.ClientSize.Width - $ProgX - 15)
+            Set-ControlBoundsSafe -Control $LabelProgressoEscanear -X $StatusX -Y 42 -W $StatusW -H 24
+            Set-ControlBoundsSafe -Control $ProgressEscanear -X $ProgX -Y 44 -W $ProgW -H 20
         }
     }
 
@@ -9537,13 +9540,16 @@ $ButtonEscanear.Size = New-Object System.Drawing.Size(140, 34)
 $ProgressEscanear = New-Object System.Windows.Forms.ProgressBar
 $ProgressEscanear.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
 $ProgressEscanear.MarqueeAnimationSpeed = 28
-$ProgressEscanear.Location = New-Object System.Drawing.Point(405, 43)
-$ProgressEscanear.Size = New-Object System.Drawing.Size(430, 22)
+$ProgressEscanear.Location = New-Object System.Drawing.Point(800, 43)
+$ProgressEscanear.Size = New-Object System.Drawing.Size(275, 22)
 $ProgressEscanear.Visible = $false
 $LabelProgressoEscanear = New-Object System.Windows.Forms.Label
 $LabelProgressoEscanear.Text = "Escaneando e lendo capas dos MP3..."
-$LabelProgressoEscanear.Location = New-Object System.Drawing.Point(845, 43)
-$LabelProgressoEscanear.Size = New-Object System.Drawing.Size(230, 22)
+$LabelProgressoEscanear.Location = New-Object System.Drawing.Point(505, 43)
+$LabelProgressoEscanear.Size = New-Object System.Drawing.Size(285, 22)
+$LabelProgressoEscanear.AutoSize = $false
+$LabelProgressoEscanear.AutoEllipsis = $false
+$LabelProgressoEscanear.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $LabelProgressoEscanear.Visible = $false
 
 $ButtonGerarTodos = New-Object System.Windows.Forms.Button
