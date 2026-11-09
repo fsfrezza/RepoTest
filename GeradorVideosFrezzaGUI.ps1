@@ -1023,31 +1023,48 @@ function Update-MainLayout {
         $PageW = [Math]::Max(700, $TabPrincipal.ClientSize.Width)
         $InnerW = [Math]::Max(680, $PageW - 30)
 
-        if ($null -ne $GroupEntrada) { Set-ControlBoundsSafe -Control $GroupEntrada -X 15 -Y 15 -W $InnerW -H 140 }
-        if ($null -ne $GroupOpcoes)  { Set-ControlBoundsSafe -Control $GroupOpcoes  -X 15 -Y 165 -W $InnerW -H 140 }
-        if ($null -ne $GroupAcoes)   { Set-ControlBoundsSafe -Control $GroupAcoes   -X 15 -Y 315 -W $InnerW -H 85 }
+        if ($null -ne $GroupEntrada) { Set-ControlBoundsSafe -Control $GroupEntrada -X 15 -Y 15 -W $InnerW -H 100 }
+        if ($null -ne $GroupOpcoes)  { Set-ControlBoundsSafe -Control $GroupOpcoes  -X 15 -Y 125 -W $InnerW -H 140 }
+        if ($null -ne $GroupAcoes)   { Set-ControlBoundsSafe -Control $GroupAcoes   -X 15 -Y 275 -W $InnerW -H 85 }
 
         if ($null -ne $GroupEntrada) {
-            $LabelX = 15
-            $TextX = 150
-            $ButtonW = 130
-            $ButtonGap = 16
-            $ButtonX = $GroupEntrada.ClientSize.Width - $ButtonW - 15
-            $TextW = $ButtonX - $TextX - $ButtonGap
-            if ($TextW -lt 220) { $TextW = 220 }
+            # Primeira linha em duas colunas: MP3 à esquerda, LEGENDAS à direita.
+            $Outer = 15
+            $ColumnGap = 24
+            $ColumnW = [int](($GroupEntrada.ClientSize.Width - (2 * $Outer) - $ColumnGap) / 2)
+            if ($ColumnW -lt 360) { $ColumnW = 360 }
 
-            Set-ControlBoundsSafe -Control $LabelPastaMP3      -X $LabelX -Y 30  -W 130 -H 24
-            Set-ControlBoundsSafe -Control $TextPastaMP3       -X $TextX  -Y 30  -W $TextW -H 24
-            Set-ControlBoundsSafe -Control $ButtonPastaMP3     -X $ButtonX -Y 27 -W $ButtonW -H 30
+            $LabelW = 135
+            $ButtonW = 100
+            $InnerGap = 10
 
-            Set-ControlBoundsSafe -Control $LabelPastaLegendas -X $LabelX -Y 65  -W 130 -H 24
-            Set-ControlBoundsSafe -Control $TextPastaLegendas  -X $TextX  -Y 65  -W $TextW -H 24
-            Set-ControlBoundsSafe -Control $ButtonPastaLegendas -X $ButtonX -Y 62 -W $ButtonW -H 30
+            $LeftX = $Outer
+            $RightX = $Outer + $ColumnW + $ColumnGap
 
-            Set-ControlBoundsSafe -Control $LabelModoLeitura   -X $LabelX -Y 100 -W 130 -H 24
-            $ComboW = [Math]::Min(500, $GroupEntrada.ClientSize.Width - $TextX - 30)
+            $LeftTextX = $LeftX + $LabelW
+            $LeftButtonX = $LeftX + $ColumnW - $ButtonW
+            $LeftTextW = $LeftButtonX - $LeftTextX - $InnerGap
+
+            $RightTextX = $RightX + $LabelW
+            $RightButtonX = $RightX + $ColumnW - $ButtonW
+            $RightTextW = $RightButtonX - $RightTextX - $InnerGap
+
+            if ($LeftTextW -lt 160) { $LeftTextW = 160 }
+            if ($RightTextW -lt 160) { $RightTextW = 160 }
+
+            Set-ControlBoundsSafe -Control $LabelPastaMP3       -X $LeftX -Y 30 -W $LabelW -H 24
+            Set-ControlBoundsSafe -Control $TextPastaMP3        -X $LeftTextX -Y 30 -W $LeftTextW -H 24
+            Set-ControlBoundsSafe -Control $ButtonPastaMP3      -X $LeftButtonX -Y 27 -W $ButtonW -H 30
+
+            Set-ControlBoundsSafe -Control $LabelPastaLegendas  -X $RightX -Y 30 -W $LabelW -H 24
+            Set-ControlBoundsSafe -Control $TextPastaLegendas   -X $RightTextX -Y 30 -W $RightTextW -H 24
+            Set-ControlBoundsSafe -Control $ButtonPastaLegendas -X $RightButtonX -Y 27 -W $ButtonW -H 30
+
+            # Segunda linha compacta.
+            Set-ControlBoundsSafe -Control $LabelModoLeitura -X $LeftX -Y 65 -W 130 -H 24
+            $ComboW = [Math]::Min(500, $GroupEntrada.ClientSize.Width - 165)
             if ($ComboW -lt 250) { $ComboW = 250 }
-            Set-ControlBoundsSafe -Control $ComboModoLeitura   -X $TextX -Y 100 -W $ComboW -H 24
+            Set-ControlBoundsSafe -Control $ComboModoLeitura -X ($LeftX + 135) -Y 65 -W $ComboW -H 24
         }
 
         if ($null -ne $GroupOpcoes) {
@@ -9432,16 +9449,16 @@ Update-TabHeaderFillPanel
 $GroupEntrada = New-Object System.Windows.Forms.GroupBox
 $GroupEntrada.Text = "1. Entrada"
 $GroupEntrada.Location = New-Object System.Drawing.Point(15, 15)
-$GroupEntrada.Size = New-Object System.Drawing.Size(1095, 140)
+$GroupEntrada.Size = New-Object System.Drawing.Size(1095, 100)
 
 $GroupOpcoes = New-Object System.Windows.Forms.GroupBox
 $GroupOpcoes.Text = "2. Gerar vídeo e/ou legendas"
-$GroupOpcoes.Location = New-Object System.Drawing.Point(15, 165)
+$GroupOpcoes.Location = New-Object System.Drawing.Point(15, 125)
 $GroupOpcoes.Size = New-Object System.Drawing.Size(1095, 140)
 
 $GroupAcoes = New-Object System.Windows.Forms.GroupBox
 $GroupAcoes.Text = "3. Escaneamento e processamento"
-$GroupAcoes.Location = New-Object System.Drawing.Point(15, 315)
+$GroupAcoes.Location = New-Object System.Drawing.Point(15, 275)
 $GroupAcoes.Size = New-Object System.Drawing.Size(1095, 80)
 
 $LabelGrupoGeracao = New-Object System.Windows.Forms.Label
@@ -9631,24 +9648,24 @@ $ButtonGerarSelecionadosAlbuns.Text = "Processar álbuns selecionados"
 $ButtonGerarSelecionadosAlbuns.Location = New-Object System.Drawing.Point(880, 15)
 $ButtonGerarSelecionadosAlbuns.Size = New-Object System.Drawing.Size(230, 34)
 
-# Reposicionamento dentro dos grupos para evitar rótulos deslocados.
+# Reposicionamento compacto: MP3 e LEGENDAS na mesma linha, em duas colunas.
 $LabelPastaMP3.Location = New-Object System.Drawing.Point(15, 30)
-$LabelPastaMP3.Size = New-Object System.Drawing.Size(130, 24)
+$LabelPastaMP3.Size = New-Object System.Drawing.Size(135, 24)
 $TextPastaMP3.Location = New-Object System.Drawing.Point(150, 30)
-$TextPastaMP3.Size = New-Object System.Drawing.Size(760, 24)
-$ButtonPastaMP3.Location = New-Object System.Drawing.Point(925, 27)
-$ButtonPastaMP3.Size = New-Object System.Drawing.Size(130, 30)
+$TextPastaMP3.Size = New-Object System.Drawing.Size(280, 24)
+$ButtonPastaMP3.Location = New-Object System.Drawing.Point(440, 27)
+$ButtonPastaMP3.Size = New-Object System.Drawing.Size(100, 30)
 
-$LabelPastaLegendas.Location = New-Object System.Drawing.Point(15, 65)
-$LabelPastaLegendas.Size = New-Object System.Drawing.Size(130, 24)
-$TextPastaLegendas.Location = New-Object System.Drawing.Point(150, 65)
-$TextPastaLegendas.Size = New-Object System.Drawing.Size(760, 24)
-$ButtonPastaLegendas.Location = New-Object System.Drawing.Point(925, 62)
-$ButtonPastaLegendas.Size = New-Object System.Drawing.Size(130, 30)
+$LabelPastaLegendas.Location = New-Object System.Drawing.Point(565, 30)
+$LabelPastaLegendas.Size = New-Object System.Drawing.Size(135, 24)
+$TextPastaLegendas.Location = New-Object System.Drawing.Point(700, 30)
+$TextPastaLegendas.Size = New-Object System.Drawing.Size(280, 24)
+$ButtonPastaLegendas.Location = New-Object System.Drawing.Point(990, 27)
+$ButtonPastaLegendas.Size = New-Object System.Drawing.Size(90, 30)
 
-$LabelModoLeitura.Location = New-Object System.Drawing.Point(15, 100)
+$LabelModoLeitura.Location = New-Object System.Drawing.Point(15, 65)
 $LabelModoLeitura.Size = New-Object System.Drawing.Size(130, 24)
-$ComboModoLeitura.Location = New-Object System.Drawing.Point(150, 100)
+$ComboModoLeitura.Location = New-Object System.Drawing.Point(150, 65)
 $ComboModoLeitura.Size = New-Object System.Drawing.Size(360, 24)
 
 # Campos internos/ocultos mantidos para compatibilidade.
