@@ -4506,7 +4506,8 @@ function Get-LanguageCodeFromSrtPath {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $Default }
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
     $Candidate = ""
-    if ($Base -match '\.([a-z]{2}(?:-[A-Za-z]{2})?)$') { $Candidate = $Matches[1] }
+    if ($Base -match '_([a-z]{2}(?:-[A-Za-z]{2})?)$') { $Candidate = $Matches[1] }
+    elseif ($Base -match '\.([a-z]{2}(?:-[A-Za-z]{2})?)$') { $Candidate = $Matches[1] }
     elseif ($Base -match '\[([a-z]{2}(?:-[A-Za-z]{2})?)\]$') { $Candidate = $Matches[1] }
     if ([string]::IsNullOrWhiteSpace($Candidate)) { return $Default }
     return $Candidate
@@ -4534,7 +4535,7 @@ function Find-SrtFilesForPublishItem {
     if ([string]::IsNullOrWhiteSpace($Base)) { return @() }
     $Found = New-Object System.Collections.Generic.List[object]
     foreach ($Dir in @(Get-PublishSubtitleDirectories -Item $Item)) {
-        foreach ($Pattern in @(("{0}.srt" -f $Base), ("{0}.*.srt" -f $Base), ("{0} [*.srt" -f $Base))) {
+        foreach ($Pattern in @(("{0}.srt" -f $Base), ("{0}_*.srt" -f $Base), ("{0}.*.srt" -f $Base), ("{0} [*.srt" -f $Base))) {
             foreach ($File in @(Get-ChildItem -LiteralPath $Dir -File -Filter $Pattern -ErrorAction SilentlyContinue | Sort-Object Name)) {
                 if ($Found | Where-Object { $_.Path -eq $File.FullName }) { continue }
                 $Lang = Get-LanguageCodeFromSrtPath -Path $File.FullName
@@ -7365,8 +7366,37 @@ function Get-SubtitleSrtPathForItem {
     $Dir = Join-SafePath $Root ([string]$Item.Album)
     $LangCode = Get-SubtitleLanguageCodeForFileName -Item $Item
     if ([string]::IsNullOrWhiteSpace($LangCode)) { $LangCode = "en" }
-    return (Join-SafePath $Dir (([string]$Item.BaseName) + ".$LangCode.srt"))
+    return (Join-SafePath $Dir (([string]$Item.BaseName) + "_" + $LangCode + ".srt"))
 }
+
+function Resolve-ExistingSubtitleSrtPathForItem {
+    param([object]$Item)
+
+    $Canonical = Get-SubtitleSrtPathForItem -Item $Item
+    if (-not [string]::IsNullOrWhiteSpace($Canonical) -and (Test-SafePath -Path $Canonical)) {
+        return $Canonical
+    }
+
+    if ($null -eq $Item) { return $Canonical }
+
+    $Root = [string]$TextLegPastaLegendas.Text
+    if ([string]::IsNullOrWhiteSpace($Root)) { return $Canonical }
+
+    $Dir = Join-SafePath $Root ([string]$Item.Album)
+    $LangCode = Get-SubtitleLanguageCodeForFileName -Item $Item
+    if ([string]::IsNullOrWhiteSpace($LangCode)) { $LangCode = "en" }
+
+    # Compatibilidade com arquivos criados por versões anteriores.
+    foreach ($Candidate in @(
+        (Join-SafePath $Dir (([string]$Item.BaseName) + "." + $LangCode + ".srt")),
+        (Join-SafePath $Dir (([string]$Item.BaseName) + ".srt"))
+    )) {
+        if (Test-SafePath -Path $Candidate) { return $Candidate }
+    }
+
+    return $Canonical
+}
+
 
 function Get-SubtitleMusicItems {
     param(
@@ -7421,9 +7451,14 @@ function Get-SubtitleMusicItems {
             }
 
             $SrtDir = Join-SafePath $PastaLegendas ([string]$Folder.Album)
-            $SrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "." + (Get-DefaultSubtitleLanguageCode) + ".srt")
+            $SrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "_" + (Get-DefaultSubtitleLanguageCode) + ".srt")
             $LegacySrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + ".srt")
-            $HasSrt = (Test-SafePath -Path $SrtPath) -or (Test-SafePath -Path $LegacySrtPath) -or (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + ".*.srt") -ErrorAction SilentlyContinue).Count -gt 0)
+            $OldDotSrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "." + (Get-DefaultSubtitleLanguageCode) + ".srt")
+            $HasSrt = (Test-SafePath -Path $SrtPath) -or
+                      (Test-SafePath -Path $OldDotSrtPath) -or
+                      (Test-SafePath -Path $LegacySrtPath) -or
+                      (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + "_*.srt") -ErrorAction SilentlyContinue).Count -gt 0) -or
+                      (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + ".*.srt") -ErrorAction SilentlyContinue).Count -gt 0)
             $Status = if ($HasSrt) { "SRT existente" } else { "Sem SRT" }
             $Items += [PSCustomObject]@{
                 Album       = [string]$Folder.Album
@@ -7475,9 +7510,14 @@ function New-SubtitleMusicItemFromMp3 {
     }
 
     $SrtDir = Join-SafePath $PastaLegendas $AlbumName
-    $SrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "." + (Get-DefaultSubtitleLanguageCode) + ".srt")
+    $SrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "_" + (Get-DefaultSubtitleLanguageCode) + ".srt")
     $LegacySrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + ".srt")
-    $HasSrt = (Test-SafePath -Path $SrtPath) -or (Test-SafePath -Path $LegacySrtPath) -or (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + ".*.srt") -ErrorAction SilentlyContinue).Count -gt 0)
+    $OldDotSrtPath = Join-SafePath $SrtDir ($Mp3.BaseName + "." + (Get-DefaultSubtitleLanguageCode) + ".srt")
+    $HasSrt = (Test-SafePath -Path $SrtPath) -or
+              (Test-SafePath -Path $OldDotSrtPath) -or
+              (Test-SafePath -Path $LegacySrtPath) -or
+              (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + "_*.srt") -ErrorAction SilentlyContinue).Count -gt 0) -or
+              (@(Get-ChildItem -LiteralPath $SrtDir -File -Filter ($Mp3.BaseName + ".*.srt") -ErrorAction SilentlyContinue).Count -gt 0)
     $Status = if ($HasSrt) { "SRT existente" } else { "Sem SRT" }
 
     return [PSCustomObject]@{
@@ -8168,7 +8208,7 @@ function Show-BurnSubtitleVideoDialog {
     }
 
     $Rows = @(Get-SubtitleRowsFromGrid)
-    $SrtPath = Get-SubtitleSrtPathForItem -Item $Item
+    $SrtPath = Resolve-ExistingSubtitleSrtPathForItem -Item $Item
 
     if ($Rows.Count -eq 0 -and (Test-SafePath -Path $SrtPath)) {
         $Rows = @(Read-SrtFileRows -Path $SrtPath)
@@ -10579,7 +10619,7 @@ $ButtonPubAplicarLegenda.Text = "Aplicar aos selecionados"
 $ButtonPubAplicarLegenda.Location = New-Object System.Drawing.Point(610, 24)
 $ButtonPubAplicarLegenda.Size = New-Object System.Drawing.Size(165, 32)
 
-$LabelPubLegInfo = New-Label -Text "SRTs: NomeDaMusica.en.srt / .pt-BR.srt / .es.srt" -X 785 -Y 30 -Width 130
+$LabelPubLegInfo = New-Label -Text "SRTs: NomeDaMusica_en.srt / _pt-BR.srt / _es.srt" -X 785 -Y 30 -Width 260
 
 $GroupPubLegendas.Controls.AddRange(@($LabelPubModoLegenda, $ComboPubModoLegenda, $CheckPubAnexarTodosSrt, $ButtonPubAplicarLegenda, $LabelPubLegInfo))
 
