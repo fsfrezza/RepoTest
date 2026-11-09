@@ -8400,8 +8400,11 @@ function Show-BurnSubtitleVideoDialog {
     }
 
     $PreviewPlayer = $null
-    $PreviewPlaybackTimer = New-Object System.Windows.Forms.Timer
-    $PreviewPlaybackTimer.Interval = 80
+    # Não usar System.Windows.Forms.Timer aqui: no EXE compilado pelo PS2EXE,
+    # o Tick pode ser executado sem Runspace do PowerShell.
+    $PreviewState.PlaybackLoopActive = $false
+    $PreviewState.PlaybackPaused = $false
+    $PreviewState.PlaybackStopRequested = $false
 
     $FormatPreviewClock = {
         param([double]$Seconds)
@@ -8472,7 +8475,8 @@ function Show-BurnSubtitleVideoDialog {
     }
 
     $StopPreviewPlayback = {
-        try { $PreviewPlaybackTimer.Stop() } catch { }
+        $PreviewState.PlaybackStopRequested = $true
+        $PreviewState.PlaybackPaused = $false
         try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.controls.stop() } } catch { }
         $PreviewState.PlaybackMode = $false
         $PreviewState.PlaybackTime = 0.0
@@ -8483,18 +8487,73 @@ function Show-BurnSubtitleVideoDialog {
         $PreviewSubtitle.Invalidate()
     }
 
-    $PreviewPlaybackTimer.Add_Tick({
+    $RunPreviewPlaybackLoop = {
+        if ([bool]$PreviewState.PlaybackLoopActive) { return }
+
+        $PreviewState.PlaybackLoopActive = $true
+        $PreviewState.PlaybackStopRequested = $false
+        $StartupClock = [System.Diagnostics.Stopwatch]::StartNew()
+
         try {
-            if ($null -eq $PreviewPlayer) { return }
-            $State = [int]$PreviewPlayer.playState
-            if ($State -eq 3) {
-                & $UpdatePreviewPlaybackFrame ([double]$PreviewPlayer.controls.currentPosition)
+            while ([bool]$PreviewState.PlaybackLoopActive -and -not [bool]$PreviewState.PlaybackStopRequested) {
+                if ($null -eq $PreviewPlayer) { break }
+                if ($Dialog.IsDisposed -or -not $Dialog.Visible) { break }
+
+                # Mantém a janela responsiva e executa os botões no MESMO thread/runspace.
+                [System.Windows.Forms.Application]::DoEvents()
+
+                $State = 0
+                $PosPreview = 0.0
+                try {
+                    $State = [int]$PreviewPlayer.playState
+                    $PosPreview = [double]$PreviewPlayer.controls.currentPosition
+                } catch { }
+
+                if ($State -eq 3) {
+                    $StartupClock.Restart()
+                    $PreviewState.PlaybackPaused = $false
+                    & $UpdatePreviewPlaybackFrame $PosPreview
+                }
+                elseif ($State -eq 2) {
+                    # Pausado: preserva exatamente o quadro/legenda atual.
+                    $PreviewState.PlaybackPaused = $true
+                    & $UpdatePreviewPlaybackFrame $PosPreview
+                }
+                elseif ($State -eq 8) {
+                    # Fim natural da mídia.
+                    break
+                }
+                elseif ($State -eq 1) {
+                    # O WMP pode reportar "Stopped" por instantes enquanto abre o arquivo.
+                    # Só encerra depois da fase de inicialização ou se já houve reprodução.
+                    if ([double]$PreviewState.PlaybackTime -gt 0.25 -or $StartupClock.ElapsedMilliseconds -gt 3000) {
+                        break
+                    }
+                }
+
+                Start-Sleep -Milliseconds 45
             }
-            elseif ($State -in @(1, 8, 10)) {
-                & $StopPreviewPlayback
+        }
+        finally {
+            $PreviewState.PlaybackLoopActive = $false
+
+            if ([bool]$PreviewState.PlaybackStopRequested) {
+                $PreviewState.PlaybackStopRequested = $false
             }
-        } catch { }
-    })
+            else {
+                # Fim natural: mantém o último instante por um momento e volta à prévia estática.
+                try {
+                    if ($null -ne $PreviewPlayer) {
+                        $FinalPos = [double]$PreviewPlayer.controls.currentPosition
+                        if ($FinalPos -gt 0) { & $UpdatePreviewPlaybackFrame $FinalPos }
+                    }
+                } catch { }
+
+                $PreviewState.PlaybackMode = $false
+                $PreviewState.PlaybackPaused = $false
+            }
+        }
+    }
 
     $GetTrackTitleFontSize = {
         param([string]$Text)
@@ -8590,7 +8649,8 @@ function Show-BurnSubtitleVideoDialog {
     })
 
     $Dialog.Add_FormClosed({
-        try { $PreviewPlaybackTimer.Stop(); $PreviewPlaybackTimer.Dispose() } catch { }
+        $PreviewState.PlaybackStopRequested = $true
+        $PreviewState.PlaybackLoopActive = $false
         try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.controls.stop(); $PreviewPlayer.close(); $PreviewPlayer = $null } } catch { }
         try { if ($null -ne $PreviewState.CoverImage) { $PreviewState.CoverImage.Dispose(); $PreviewState.CoverImage = $null } } catch { }
     })
@@ -8708,16 +8768,40 @@ function Show-BurnSubtitleVideoDialog {
                 $PreviewPlayer.settings.autoStart = $false
             }
 
-            if ([string]$PreviewPlayer.URL -ne $MediaPath) {
-                $PreviewPlayer.URL = $MediaPath
-                Start-Sleep -Milliseconds 120
+            # Se o loop já está ativo, Play funciona como Retomar.
+            if ([bool]$PreviewState.PlaybackLoopActive) {
+                $PreviewState.PlaybackPaused = $false
+                $PreviewState.PlaybackStopRequested = $false
+                $PreviewState.PlaybackMode = $true
+                $PreviewPlayer.controls.play()
+                return
             }
 
+            if ([string]$PreviewPlayer.URL -ne $MediaPath) {
+                $PreviewPlayer.URL = $MediaPath
+
+                # Aguarda o WMP carregar sem congelar a UI.
+                $LoadClock = [System.Diagnostics.Stopwatch]::StartNew()
+                while ($LoadClock.ElapsedMilliseconds -lt 1800) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                    $ReadyState = 0
+                    try { $ReadyState = [int]$PreviewPlayer.playState } catch { }
+                    if ($ReadyState -in @(3, 6, 9, 10)) { break }
+                    Start-Sleep -Milliseconds 30
+                }
+            }
+
+            $PreviewState.PlaybackStopRequested = $false
+            $PreviewState.PlaybackPaused = $false
             $PreviewState.PlaybackMode = $true
             $PreviewPlayer.controls.play()
-            $PreviewPlaybackTimer.Start()
+
+            # O loop roda no mesmo Runspace do clique e atualiza legenda/relógio.
+            & $RunPreviewPlaybackLoop
         }
         catch {
+            $PreviewState.PlaybackLoopActive = $false
+            $PreviewState.PlaybackMode = $false
             [System.Windows.Forms.MessageBox]::Show("Não foi possível reproduzir a prévia: $($_.Exception.Message)", "Prévia", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
         }
     })
@@ -8727,7 +8811,7 @@ function Show-BurnSubtitleVideoDialog {
             if ($null -ne $PreviewPlayer) {
                 $PosPreview = [double]$PreviewPlayer.controls.currentPosition
                 $PreviewPlayer.controls.pause()
-                $PreviewPlaybackTimer.Stop()
+                $PreviewState.PlaybackPaused = $true
                 & $UpdatePreviewPlaybackFrame $PosPreview
             }
         } catch { }
@@ -8902,6 +8986,7 @@ function Show-BurnSubtitleVideoDialog {
         $Open.Multiselect = $false
         if ($Open.ShowDialog($Dialog) -eq [System.Windows.Forms.DialogResult]::OK) {
             & $StopPreviewPlayback
+            $PreviewState.PlaybackLoopActive = $false
             try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.close() } } catch { }
             $PreviewPlayer = $null
             $TxtVideo.Text = $Open.FileName
