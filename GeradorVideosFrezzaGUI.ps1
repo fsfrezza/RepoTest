@@ -4126,7 +4126,7 @@ function Show-CoverHoverPreview {
         }
         if($script:CoverPreviewPicture.Image){ $Old=$script:CoverPreviewPicture.Image; $script:CoverPreviewPicture.Image=$null; $Old.Dispose() }
         $Bytes=[System.IO.File]::ReadAllBytes($Path); $Ms=New-Object System.IO.MemoryStream(,$Bytes); $Img=[System.Drawing.Image]::FromStream($Ms); $script:CoverPreviewPicture.Image=New-Object System.Drawing.Bitmap($Img); $Img.Dispose(); $Ms.Dispose()
-        $script:CoverPreviewForm.Location=New-Object System.Drawing.Point(($ScreenPoint.X+18),($ScreenPoint.Y+18)); $script:CoverPreviewForm.Show(); $script:CoverPreviewForm.BringToFront()
+        $script:CoverPreviewForm.Location=[System.Drawing.Point]::new([int]($ScreenPoint.X + 18), [int]($ScreenPoint.Y + 18)); $script:CoverPreviewForm.Show(); $script:CoverPreviewForm.BringToFront()
     } catch { Hide-CoverHoverPreview }
 }
 
@@ -8746,14 +8746,14 @@ function Show-BurnSubtitleVideoDialog {
     $BtnMultiplasLegendas.Add_Click({
         $SubDlg=New-Object System.Windows.Forms.Form; $SubDlg.Text="Legendas do vídeo"; $SubDlg.StartPosition='CenterParent'; $SubDlg.Size=New-Object System.Drawing.Size(910,335); $SubDlg.FormBorderStyle='FixedDialog'; $SubDlg.MaximizeBox=$false; $SubDlg.MinimizeBox=$false
         $Info=New-Object System.Windows.Forms.Label; $Info.Text="Escolha até 3 legendas, a posição e o intervalo em que cada uma permanecerá visível."; $Info.Location=New-Object System.Drawing.Point(15,15); $Info.Size=New-Object System.Drawing.Size(850,24); $SubDlg.Controls.Add($Info)
-        foreach($Hdr in @(@{T='Legenda';X=95;W=390},@{T='Posição';X=500;W=105},@{T='Início';X=620;W=80},@{T='Fim';X=715;W=80})){ $H=New-Object System.Windows.Forms.Label; $H.Text=$Hdr.T; $H.Location=New-Object System.Drawing.Point($Hdr.X,48); $H.Size=New-Object System.Drawing.Size($Hdr.W,20); $H.Font=New-Object System.Drawing.Font($SubDlg.Font,[System.Drawing.FontStyle]::Bold); $SubDlg.Controls.Add($H) }
+        foreach($Hdr in @(@{T='Legenda';X=95;W=390},@{T='Posição';X=500;W=105},@{T='Início';X=620;W=80},@{T='Fim';X=715;W=80})){ $H=New-Object System.Windows.Forms.Label; $H.Text=$Hdr.T; $H.Location=[System.Drawing.Point]::new([int]$Hdr.X, 48); $H.Size=[System.Drawing.Size]::new([int]$Hdr.W, 20); $H.Font=New-Object System.Drawing.Font($SubDlg.Font,[System.Drawing.FontStyle]::Bold); $SubDlg.Controls.Add($H) }
         $Files=@(Get-SubtitleFilesForItem -Item $Item | ForEach-Object {$_.FullName}); $Sources=@('(Legenda atual da grade)')+$Files; $Combos=@(); $Poss=@(); $Starts=@(); $Ends=@()
         for($i=0;$i -lt 3;$i++){
-            $Y=75+($i*52); $L=New-Object System.Windows.Forms.Label; $L.Text=("Legenda {0}:" -f ($i+1)); $L.Location=New-Object System.Drawing.Point(15,$Y+3); $L.Size=New-Object System.Drawing.Size(75,22); $SubDlg.Controls.Add($L)
-            $C=New-Object System.Windows.Forms.ComboBox; $C.Location=New-Object System.Drawing.Point(95,$Y); $C.Size=New-Object System.Drawing.Size(390,24); $C.DropDownStyle='DropDownList'; [void]$C.Items.Add('(Nenhuma)'); foreach($X in $Sources){[void]$C.Items.Add($X)}
-            $P=New-Object System.Windows.Forms.ComboBox; $P.Location=New-Object System.Drawing.Point(500,$Y); $P.Size=New-Object System.Drawing.Size(105,24); $P.DropDownStyle='DropDownList'; @('Superior','Centro','Inferior')|ForEach-Object{[void]$P.Items.Add($_)}
-            $TS=New-Object System.Windows.Forms.TextBox; $TS.Location=New-Object System.Drawing.Point(620,$Y); $TS.Size=New-Object System.Drawing.Size(80,24); $TS.Text='00m:00s'
-            $TE=New-Object System.Windows.Forms.TextBox; $TE.Location=New-Object System.Drawing.Point(715,$Y); $TE.Size=New-Object System.Drawing.Size(80,24); $TE.Text=(Format-MinSecDisplay -Seconds $VideoDurationSeconds)
+            $Y=75+($i*52); $L=New-Object System.Windows.Forms.Label; $L.Text=("Legenda {0}:" -f ($i+1)); $L.Location=[System.Drawing.Point]::new(15, [int]($Y + 3)); $L.Size=New-Object System.Drawing.Size(75,22); $SubDlg.Controls.Add($L)
+            $C=New-Object System.Windows.Forms.ComboBox; $C.Location=[System.Drawing.Point]::new(95, [int]$Y); $C.Size=New-Object System.Drawing.Size(390,24); $C.DropDownStyle='DropDownList'; [void]$C.Items.Add('(Nenhuma)'); foreach($X in $Sources){[void]$C.Items.Add($X)}
+            $P=New-Object System.Windows.Forms.ComboBox; $P.Location=[System.Drawing.Point]::new(500, [int]$Y); $P.Size=New-Object System.Drawing.Size(105,24); $P.DropDownStyle='DropDownList'; @('Superior','Centro','Inferior')|ForEach-Object{[void]$P.Items.Add($_)}
+            $TS=New-Object System.Windows.Forms.TextBox; $TS.Location=[System.Drawing.Point]::new(620, [int]$Y); $TS.Size=New-Object System.Drawing.Size(80,24); $TS.Text='00m:00s'
+            $TE=New-Object System.Windows.Forms.TextBox; $TE.Location=[System.Drawing.Point]::new(715, [int]$Y); $TE.Size=New-Object System.Drawing.Size(80,24); $TE.Text=(Format-MinSecDisplay -Seconds $VideoDurationSeconds)
             if($i -lt $SubtitleLayers.Count){ $Existing=$SubtitleLayers[$i]; $Wanted=if([string]$Existing.Source -eq 'Grade atual'){'(Legenda atual da grade)'}elseif(-not [string]::IsNullOrWhiteSpace([string]$Existing.Path)){[string]$Existing.Path}else{'(Nenhuma)'}; $Idx=$C.Items.IndexOf($Wanted); if($Idx -ge 0){$C.SelectedIndex=$Idx}else{$C.SelectedIndex=0}; $P.SelectedItem=[string]$Existing.Position; if($null -eq $P.SelectedItem){$P.SelectedItem='Inferior'}; try{$TS.Text=Format-MinSecDisplay -Seconds ([double]$Existing.StartAt)}catch{}; try{$TE.Text=Format-MinSecDisplay -Seconds ([double]$Existing.EndAt)}catch{} } else { $C.SelectedIndex=0; $P.SelectedItem=@('Inferior','Centro','Superior')[$i] }
             $SubDlg.Controls.AddRange(@($C,$P,$TS,$TE)); $Combos+=$C; $Poss+=$P; $Starts+=$TS; $Ends+=$TE
         }
