@@ -8214,25 +8214,28 @@ function Show-BurnSubtitleVideoDialog {
     $LblPreview = New-Label -Text "Prévia da posição:" -X 15 -Y 350 -Width 160
 
     $BtnPreviewTocar = New-Object System.Windows.Forms.Button
-    $BtnPreviewTocar.Text = "▶"
-    $BtnPreviewTocar.Location = New-Object System.Drawing.Point(555, 344)
-    $BtnPreviewTocar.Size = New-Object System.Drawing.Size(42, 27)
+    $BtnPreviewTocar.Text = "▶ Tocar"
+    $BtnPreviewTocar.Location = New-Object System.Drawing.Point(170, 344)
+    $BtnPreviewTocar.Size = New-Object System.Drawing.Size(95, 28)
+    $BtnPreviewTocar.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
 
     $BtnPreviewPausar = New-Object System.Windows.Forms.Button
-    $BtnPreviewPausar.Text = "⏸"
-    $BtnPreviewPausar.Location = New-Object System.Drawing.Point(602, 344)
-    $BtnPreviewPausar.Size = New-Object System.Drawing.Size(42, 27)
+    $BtnPreviewPausar.Text = "⏸ Pausar"
+    $BtnPreviewPausar.Location = New-Object System.Drawing.Point(272, 344)
+    $BtnPreviewPausar.Size = New-Object System.Drawing.Size(95, 28)
+    $BtnPreviewPausar.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
 
     $BtnPreviewParar = New-Object System.Windows.Forms.Button
-    $BtnPreviewParar.Text = "⏹"
-    $BtnPreviewParar.Location = New-Object System.Drawing.Point(649, 344)
-    $BtnPreviewParar.Size = New-Object System.Drawing.Size(42, 27)
+    $BtnPreviewParar.Text = "⏹ Parar"
+    $BtnPreviewParar.Location = New-Object System.Drawing.Point(374, 344)
+    $BtnPreviewParar.Size = New-Object System.Drawing.Size(95, 28)
+    $BtnPreviewParar.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
 
     $LblPreviewTempo = New-Object System.Windows.Forms.Label
     $LblPreviewTempo.Text = "00:00 / 00:00"
-    $LblPreviewTempo.Location = New-Object System.Drawing.Point(700, 348)
-    $LblPreviewTempo.Size = New-Object System.Drawing.Size(170, 22)
-    $LblPreviewTempo.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $LblPreviewTempo.Location = New-Object System.Drawing.Point(485, 347)
+    $LblPreviewTempo.Size = New-Object System.Drawing.Size(180, 22)
+    $LblPreviewTempo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
     $CheckMostrarFaixaTitulo = New-Object System.Windows.Forms.CheckBox
     $CheckMostrarFaixaTitulo.Text = "Mostrar faixa com o nome da música"
@@ -8340,8 +8343,12 @@ function Show-BurnSubtitleVideoDialog {
     $LblPreviewDica.ForeColor = [System.Drawing.Color]::Gainsboro
     $LblPreviewDica.BackColor = [System.Drawing.Color]::Transparent
     $LblPreviewDica.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Regular)
-    $LblPreviewDica.Location = New-Object System.Drawing.Point(12, 290)
-    $LblPreviewDica.Size = New-Object System.Drawing.Size(835, 22)
+    $LblPreviewDica.Location = New-Object System.Drawing.Point(12, 271)
+    $LblPreviewDica.Size = New-Object System.Drawing.Size(835, 20)
+    $LblPreviewDica.AutoSize = $false
+    $LblPreviewDica.AutoEllipsis = $false
+    $LblPreviewDica.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $LblPreviewDica.Anchor = "Left,Right,Bottom"
 
     [void]$PreviewSurface.Controls.Add($PreviewTitle)
     [void]$PreviewSurface.Controls.Add($PreviewSubtitle)
@@ -8582,7 +8589,8 @@ function Show-BurnSubtitleVideoDialog {
             if ($VideoH -le 0) { $VideoH = 1920 }
 
             $MaxW = [Math]::Max(120, $PreviewPanel.ClientSize.Width - 20)
-            $MaxH = [Math]::Max(120, $PreviewPanel.ClientSize.Height - 42)
+            # Reserva espaço fixo no rodapé do painel para a instrução de arraste.
+            $MaxH = [Math]::Max(120, $PreviewPanel.ClientSize.Height - 58)
             $Scale = [Math]::Min([double]$MaxW / [double]$VideoW, [double]$MaxH / [double]$VideoH)
             if ($Scale -le 0) { $Scale = 1.0 }
             $PreviewState.Scale = [double]$Scale
@@ -8592,7 +8600,7 @@ function Show-BurnSubtitleVideoDialog {
             if ($SurfW -lt 120) { $SurfW = 120 }
             if ($SurfH -lt 120) { $SurfH = 120 }
             $SurfX = [int](($PreviewPanel.ClientSize.Width - $SurfW) / 2)
-            $SurfY = [int](($PreviewPanel.ClientSize.Height - 34 - $SurfH) / 2)
+            $SurfY = [int](($PreviewPanel.ClientSize.Height - 50 - $SurfH) / 2)
             if ($SurfY -lt 8) { $SurfY = 8 }
             $PreviewSurface.Location = New-Object System.Drawing.Point($SurfX, $SurfY)
             $PreviewSurface.Size = New-Object System.Drawing.Size($SurfW, $SurfH)
@@ -9017,6 +9025,18 @@ function Show-BurnSubtitleVideoDialog {
         $LblStatus,
         $BtnGerar, $BtnFechar
     ))
+
+    # Garante que os controles de reprodução permaneçam visíveis mesmo com DPI/escala do Windows.
+    foreach ($CtlPreview in @($LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $LblPreviewTempo)) {
+        try {
+            $CtlPreview.Visible = $true
+            $CtlPreview.BringToFront()
+        } catch { }
+    }
+    try {
+        $LblPreviewDica.Visible = $true
+        $LblPreviewDica.BringToFront()
+    } catch { }
 
     $Dialog.ShowDialog($Form) | Out-Null
 }
