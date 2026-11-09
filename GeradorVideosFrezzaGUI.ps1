@@ -6120,6 +6120,8 @@ $script:LegIndiceMarcacao = 0
 $script:LegClock = [System.Diagnostics.Stopwatch]::New()
 $script:LegClockBaseSeconds = 0.0
 $script:LegClockRunning = $false
+$script:LegPlaybackLoopActive = $false
+$script:LegPlaybackStopRequested = $false
 
 function Reset-LegendPlaybackClock {
     param([double]$Seconds = 0.0)
@@ -6249,9 +6251,17 @@ function Play-SelectedSubtitleAudio {
     }
 
     try {
+        if ([bool]$script:LegPlaybackLoopActive) {
+            $script:LegPlaybackStopRequested = $false
+            $script:LegPlayer.controls.play()
+            Start-LegendPlaybackClockFromPlayer
+            return
+        }
+
+        $script:LegPlaybackStopRequested = $false
         $script:LegPlayer.controls.play()
 
-        for ($i = 0; $i -lt 50; $i++) {
+        for ($i = 0; $i -lt 120; $i++) {
             $State = 0
             try { $State = [int]$script:LegPlayer.playState } catch { }
             if ($State -eq 3) { break }
@@ -6260,8 +6270,37 @@ function Play-SelectedSubtitleAudio {
         }
 
         Start-LegendPlaybackClockFromPlayer
+        $script:LegPlaybackLoopActive = $true
+
+        try {
+            while ($script:LegPlaybackLoopActive -and -not $script:LegPlaybackStopRequested) {
+                [System.Windows.Forms.Application]::DoEvents()
+
+                Sync-LegendClockWithPlayerState
+                Update-SubtitleRowFromPlayback
+
+                $State = 0
+                try { $State = [int]$script:LegPlayer.playState } catch { }
+
+                if ($State -eq 8) { break }
+                if ($State -eq 1) {
+                    $Dur = 0.0
+                    $Pos = 0.0
+                    try { $Dur = [double]$script:LegPlayer.currentMedia.duration } catch { }
+                    try { $Pos = [double]$script:LegPlayer.controls.currentPosition } catch { }
+                    if ($Dur -gt 0 -and $Pos -ge ($Dur - 0.35)) { break }
+                }
+
+                Start-Sleep -Milliseconds 55
+            }
+        }
+        finally {
+            $script:LegPlaybackLoopActive = $false
+            $script:LegPlaybackStopRequested = $false
+        }
     }
     catch {
+        $script:LegPlaybackLoopActive = $false
     }
 }
 
@@ -6281,6 +6320,8 @@ function Pause-SelectedSubtitleAudio {
 
 function Stop-SelectedSubtitleAudio {
     try {
+        $script:LegPlaybackStopRequested = $true
+        $script:LegPlaybackLoopActive = $false
         if ($null -ne $script:LegPlayer) {
             $script:LegPlayer.controls.stop()
         }
@@ -8415,8 +8456,7 @@ function Show-BurnSubtitleVideoDialog {
     }
 
     $GetPreviewMediaPath = {
-        $Path = [string]$TxtVideo.Text
-        if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
+        # A prévia visual precisa apenas do áudio; prioriza o MP3.
         try {
             $Path = [string]$Item.FilePath
             if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
@@ -8425,6 +8465,8 @@ function Show-BurnSubtitleVideoDialog {
             $Path = [string]$Item.MusicFile.FullName
             if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
         } catch { }
+        $Path = [string]$TxtVideo.Text
+        if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
         return ""
     }
 
@@ -8524,9 +8566,11 @@ function Show-BurnSubtitleVideoDialog {
                     break
                 }
                 elseif ($State -eq 1) {
-                    # O WMP pode reportar "Stopped" por instantes enquanto abre o arquivo.
-                    # Só encerra depois da fase de inicialização ou se já houve reprodução.
-                    if ([double]$PreviewState.PlaybackTime -gt 0.25 -or $StartupClock.ElapsedMilliseconds -gt 3000) {
+                    # "Stopped" pode ser transitório durante buffering.
+                    # Só trata como fim se a posição já chegou ao final da mídia.
+                    $DurPreview = 0.0
+                    try { $DurPreview = [double]$PreviewPlayer.currentMedia.duration } catch { }
+                    if ($DurPreview -gt 0 -and $PosPreview -ge ($DurPreview - 0.35)) {
                         break
                     }
                 }
@@ -11107,19 +11151,8 @@ $TextLegArquivoSrt.Add_SelectedIndexChanged({
     } catch { }
 })
 
-# Sincroniza a linha selecionada com o trecho que está sendo reproduzido.
-if ($null -eq $script:LegPlaybackSyncTimer) {
-    $script:LegPlaybackSyncTimer = New-Object System.Windows.Forms.Timer
-    $script:LegPlaybackSyncTimer.Interval = 80
-    $script:LegPlaybackSyncTimer.Add_Tick({
-        try {
-            Sync-LegendClockWithPlayerState
-            Update-SubtitleRowFromPlayback
-        }
-        catch { }
-    })
-    $script:LegPlaybackSyncTimer.Start()
-}
+# A linha ativa é sincronizada pelo próprio loop de reprodução.
+# Não usar Timer do WinForms aqui: no EXE do PS2EXE o Tick pode rodar sem Runspace.
 
 $GridLegendas.Add_SelectionChanged({
     Update-ManualMarkerStatus
