@@ -6165,6 +6165,9 @@ function Set-LegendPlayerFile {
             Start-Sleep -Milliseconds 150
             $script:LegPlayer.controls.stop()
             Reset-LegendPlaybackClock -Seconds 0
+            $script:LegToggleMarkOpen = $false
+            $script:LegToggleMarkRowIndex = -1
+            try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
         }
 
         return $true
@@ -6760,6 +6763,11 @@ function Remove-SelectedSubtitleGridLine {
 }
 
 function Set-SelectedSubtitleLineStart {
+    # Marcação explícita com [ cancela qualquer ciclo iniciado pelo botão |.
+    $script:LegToggleMarkOpen = $false
+    $script:LegToggleMarkRowIndex = -1
+    try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
+
     $Row = Get-OrCreateSelectedSubtitleGridRow -CreateWhenEmpty
     if ($null -eq $Row) {
         [System.Windows.Forms.MessageBox]::Show("Selecione uma linha para marcar o início do trecho.", "Legendas", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
@@ -6781,6 +6789,11 @@ function Set-SelectedSubtitleLineStart {
 }
 
 function Set-SelectedSubtitleLineEnd {
+    # Marcação explícita com ] cancela qualquer ciclo iniciado pelo botão |.
+    $script:LegToggleMarkOpen = $false
+    $script:LegToggleMarkRowIndex = -1
+    try { $ButtonLegAlternarMarcacao.Tag = "Abrir" } catch { }
+
     $Row = Get-OrCreateSelectedSubtitleGridRow -CreateWhenEmpty
     if ($null -eq $Row) {
         [System.Windows.Forms.MessageBox]::Show("Selecione uma linha para marcar o fim do trecho.", "Legendas", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
