@@ -1156,7 +1156,7 @@ function Update-MainLayout {
         if ($RightW -lt 560) { $RightW = 560 }
 
         $MidY = 150
-        $BottomGroupH = 130
+        $BottomGroupH = 85
         $MidH = $PageH - $MidY - $BottomGroupH - 45
         if ($MidH -lt 405) { $MidH = 405 }
 
@@ -1178,33 +1178,47 @@ function Update-MainLayout {
 
             $BottomY1 = $GroupLegEditor.ClientSize.Height - 112
             $BottomY2 = $GroupLegEditor.ClientSize.Height - 62
-            Set-ControlBoundsSafe -Control $ButtonLegAdicionarLinha -X 15 -Y $BottomY1 -W 120 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegRemoverLinha -X 145 -Y $BottomY1 -W 120 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegLimpar -X 275 -Y $BottomY1 -W 80 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegAbrirSrt -X 365 -Y $BottomY1 -W 120 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegRedistribuir -X 495 -Y $BottomY1 -W 95 -H 42
-            Set-ControlBoundsSafe -Control $NumericLegAjusteGlobal -X 600 -Y ($BottomY1 + 9) -W 55 -H 24
-            Set-ControlBoundsSafe -Control $ButtonLegRecuarTodos -X 665 -Y $BottomY1 -W 75 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegAtrasarTodos -X 750 -Y $BottomY1 -W 80 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegVideoLegendado -X 15 -Y $BottomY2 -W 190 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegSalvarSrt -X ([Math]::Max(220, $EditorW - 165)) -Y $BottomY2 -W 150 -H 42
+
+            # Linha 1: operações estruturais da grade.
+            Set-ControlBoundsSafe -Control $ButtonLegAdicionarLinha -X 15 -Y $BottomY1 -W 110 -H 42
+            Set-ControlBoundsSafe -Control $ButtonLegRemoverLinha -X 135 -Y $BottomY1 -W 110 -H 42
+            Set-ControlBoundsSafe -Control $ButtonLegLimpar -X 255 -Y $BottomY1 -W 75 -H 42
+            Set-ControlBoundsSafe -Control $ButtonLegAbrirSrt -X 340 -Y $BottomY1 -W 115 -H 42
+
+            # Linha 2: geração, ajuste global de sincronização e salvamento.
+            $Row2X = 15
+            Set-ControlBoundsSafe -Control $ButtonLegVideoLegendado -X $Row2X -Y $BottomY2 -W 145 -H 42
+            $Row2X += 155
+            Set-ControlBoundsSafe -Control $ButtonLegRedistribuir -X $Row2X -Y $BottomY2 -W 90 -H 42
+            $Row2X += 98
+            Set-ControlBoundsSafe -Control $NumericLegAjusteGlobal -X $Row2X -Y ($BottomY2 + 9) -W 55 -H 24
+            $Row2X += 63
+            Set-ControlBoundsSafe -Control $ButtonLegRecuarTodos -X $Row2X -Y $BottomY2 -W 72 -H 42
+            $Row2X += 80
+            Set-ControlBoundsSafe -Control $ButtonLegAtrasarTodos -X $Row2X -Y $BottomY2 -W 78 -H 42
+
+            $SaveW = 110
+            $SaveX = [Math]::Max(($Row2X + 88), ($EditorW - $SaveW - 15))
+            if (($SaveX + $SaveW) -gt ($EditorW - 10)) { $SaveX = $EditorW - $SaveW - 10 }
+            Set-ControlBoundsSafe -Control $ButtonLegSalvarSrt -X $SaveX -Y $BottomY2 -W $SaveW -H 42
         }
 
         if ($null -ne $GroupLegAlbum) {
             Set-ControlBoundsSafe -Control $GroupLegAlbum -X 15 -Y ($PageH - $BottomGroupH - 20) -W $InnerW -H $BottomGroupH
 
-            $AlbumGroupW = [Math]::Max(500, $GroupLegAlbum.ClientSize.Width)
-            $AlbumComboW = $AlbumGroupW - 115
-            if ($AlbumComboW -lt 260) { $AlbumComboW = 260 }
+            $AlbumGroupW = [Math]::Max(700, $GroupLegAlbum.ClientSize.Width)
 
-            Set-ControlBoundsSafe -Control $LabelLegAlbum -X 15 -Y 30 -W 65 -H 22
-            Set-ControlBoundsSafe -Control $ComboLegAlbum -X 85 -Y 30 -W $AlbumComboW -H 24
+            # Tudo que é operacional fica na mesma linha.
+            Set-ControlBoundsSafe -Control $LabelLegAlbum -X 15 -Y 28 -W 60 -H 22
+            $AlbumComboW = [Math]::Max(260, [int]($AlbumGroupW * 0.48))
+            Set-ControlBoundsSafe -Control $ComboLegAlbum -X 75 -Y 27 -W $AlbumComboW -H 24
 
-            Set-ControlBoundsSafe -Control $LabelLegSilencio -X 15 -Y 65 -W 180 -H 22
-            Set-ControlBoundsSafe -Control $NumericLegSilencioAlbum -X 200 -Y 63 -W 90 -H 24
-            Set-ControlBoundsSafe -Control $ButtonLegGerarAlbum -X 315 -Y 58 -W 190 -H 34
+            $SilencioX = 75 + $AlbumComboW + 18
+            Set-ControlBoundsSafe -Control $LabelLegSilencio -X $SilencioX -Y 28 -W 165 -H 22
+            Set-ControlBoundsSafe -Control $NumericLegSilencioAlbum -X ($SilencioX + 168) -Y 27 -W 75 -H 24
+            Set-ControlBoundsSafe -Control $ButtonLegGerarAlbum -X ($SilencioX + 255) -Y 23 -W 175 -H 32
 
-            Set-ControlBoundsSafe -Control $LabelLegAlbumInfo -X 15 -Y 96 -W ($AlbumGroupW - 30) -H 22
+            Set-ControlBoundsSafe -Control $LabelLegAlbumInfo -X 15 -Y 58 -W ($AlbumGroupW - 30) -H 20
         }
     }
 
@@ -10409,11 +10423,11 @@ $ButtonLegAbrirSrt.Size = New-Object System.Drawing.Size(120, 42)
 
 $ButtonLegRedistribuir = New-Object System.Windows.Forms.Button
 $ButtonLegRedistribuir.Text = "Redistribuir`ntempos"
-$ButtonLegRedistribuir.Location = New-Object System.Drawing.Point(495, 323)
-$ButtonLegRedistribuir.Size = New-Object System.Drawing.Size(95, 42)
+$ButtonLegRedistribuir.Location = New-Object System.Drawing.Point(170, 370)
+$ButtonLegRedistribuir.Size = New-Object System.Drawing.Size(90, 42)
 
 $NumericLegAjusteGlobal = New-Object System.Windows.Forms.NumericUpDown
-$NumericLegAjusteGlobal.Location = New-Object System.Drawing.Point(600, 332)
+$NumericLegAjusteGlobal.Location = New-Object System.Drawing.Point(268, 379)
 $NumericLegAjusteGlobal.Size = New-Object System.Drawing.Size(55, 24)
 $NumericLegAjusteGlobal.DecimalPlaces = 1
 $NumericLegAjusteGlobal.Increment = 0.1
@@ -10423,13 +10437,13 @@ $NumericLegAjusteGlobal.Value = 1.0
 
 $ButtonLegRecuarTodos = New-Object System.Windows.Forms.Button
 $ButtonLegRecuarTodos.Text = "← Recuar"
-$ButtonLegRecuarTodos.Location = New-Object System.Drawing.Point(665, 323)
-$ButtonLegRecuarTodos.Size = New-Object System.Drawing.Size(75, 42)
+$ButtonLegRecuarTodos.Location = New-Object System.Drawing.Point(331, 370)
+$ButtonLegRecuarTodos.Size = New-Object System.Drawing.Size(72, 42)
 
 $ButtonLegAtrasarTodos = New-Object System.Windows.Forms.Button
 $ButtonLegAtrasarTodos.Text = "Atrasar →"
-$ButtonLegAtrasarTodos.Location = New-Object System.Drawing.Point(750, 323)
-$ButtonLegAtrasarTodos.Size = New-Object System.Drawing.Size(80, 42)
+$ButtonLegAtrasarTodos.Location = New-Object System.Drawing.Point(411, 370)
+$ButtonLegAtrasarTodos.Size = New-Object System.Drawing.Size(78, 42)
 
 $ToolTipLegAjuste = New-Object System.Windows.Forms.ToolTip
 $ToolTipLegAjuste.SetToolTip($NumericLegAjusteGlobal, "Quantidade de segundos aplicada a todos os tempos.")
@@ -10439,7 +10453,7 @@ $ToolTipLegAjuste.SetToolTip($ButtonLegAtrasarTodos, "Soma esse valor a Início 
 $ButtonLegVideoLegendado = New-Object System.Windows.Forms.Button
 $ButtonLegVideoLegendado.Text = "Gerar vídeo`ncom legenda"
 $ButtonLegVideoLegendado.Location = New-Object System.Drawing.Point(15, 370)
-$ButtonLegVideoLegendado.Size = New-Object System.Drawing.Size(180, 42)
+$ButtonLegVideoLegendado.Size = New-Object System.Drawing.Size(145, 42)
 
 $GroupLegEditor.Controls.AddRange(@(
     $TextLegArquivoMP3,
@@ -10468,25 +10482,25 @@ $GroupLegEditor.Controls.AddRange(@(
 
 $ButtonLegSalvarSrt = New-Object System.Windows.Forms.Button
 $ButtonLegSalvarSrt.Text = "Salvar .SRT"
-$ButtonLegSalvarSrt.Location = New-Object System.Drawing.Point(515, 373)
-$ButtonLegSalvarSrt.Size = New-Object System.Drawing.Size(150, 42)
+$ButtonLegSalvarSrt.Location = New-Object System.Drawing.Point(555, 370)
+$ButtonLegSalvarSrt.Size = New-Object System.Drawing.Size(110, 42)
 $GroupLegEditor.Controls.Add($ButtonLegSalvarSrt)
 
 $GroupLegAlbum = New-Object System.Windows.Forms.GroupBox
 $GroupLegAlbum.Text = "4. Legenda do vídeo de álbum inteiro"
 $GroupLegAlbum.Location = New-Object System.Drawing.Point(15, 590)
-$GroupLegAlbum.Size = New-Object System.Drawing.Size(1095, 125)
+$GroupLegAlbum.Size = New-Object System.Drawing.Size(1095, 85)
 
-$LabelLegAlbum = New-Label -Text "Álbum:" -X 15 -Y 30 -Width 65
+$LabelLegAlbum = New-Label -Text "Álbum:" -X 15 -Y 28 -Width 60
 $ComboLegAlbum = New-Object System.Windows.Forms.ComboBox
-$ComboLegAlbum.Location = New-Object System.Drawing.Point(85, 30)
-$ComboLegAlbum.Size = New-Object System.Drawing.Size(400, 24)
+$ComboLegAlbum.Location = New-Object System.Drawing.Point(75, 27)
+$ComboLegAlbum.Size = New-Object System.Drawing.Size(520, 24)
 $ComboLegAlbum.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
-$LabelLegSilencio = New-Label -Text "Silêncio entre músicas:" -X 15 -Y 65 -Width 180
+$LabelLegSilencio = New-Label -Text "Silêncio entre músicas:" -X 615 -Y 28 -Width 165
 $NumericLegSilencioAlbum = New-Object System.Windows.Forms.NumericUpDown
-$NumericLegSilencioAlbum.Location = New-Object System.Drawing.Point(200, 65)
-$NumericLegSilencioAlbum.Size = New-Object System.Drawing.Size(80, 24)
+$NumericLegSilencioAlbum.Location = New-Object System.Drawing.Point(783, 27)
+$NumericLegSilencioAlbum.Size = New-Object System.Drawing.Size(75, 24)
 $NumericLegSilencioAlbum.DecimalPlaces = 1
 $NumericLegSilencioAlbum.Minimum = 0
 $NumericLegSilencioAlbum.Maximum = 60
@@ -10494,13 +10508,13 @@ $NumericLegSilencioAlbum.Value = 1
 
 $ButtonLegGerarAlbum = New-Object System.Windows.Forms.Button
 $ButtonLegGerarAlbum.Text = "Gerar SRT do álbum"
-$ButtonLegGerarAlbum.Location = New-Object System.Drawing.Point(310, 58)
-$ButtonLegGerarAlbum.Size = New-Object System.Drawing.Size(180, 34)
+$ButtonLegGerarAlbum.Location = New-Object System.Drawing.Point(870, 23)
+$ButtonLegGerarAlbum.Size = New-Object System.Drawing.Size(175, 32)
 
 $LabelLegAlbumInfo = New-Object System.Windows.Forms.Label
 $LabelLegAlbumInfo.Text = "O SRT do álbum é montado a partir dos SRTs das músicas, na ordem dos arquivos MP3."
-$LabelLegAlbumInfo.Location = New-Object System.Drawing.Point(15, 96)
-$LabelLegAlbumInfo.Size = New-Object System.Drawing.Size(900, 22)
+$LabelLegAlbumInfo.Location = New-Object System.Drawing.Point(15, 58)
+$LabelLegAlbumInfo.Size = New-Object System.Drawing.Size(1020, 20)
 
 $GroupLegAlbum.Controls.AddRange(@(
     $LabelLegAlbum,
