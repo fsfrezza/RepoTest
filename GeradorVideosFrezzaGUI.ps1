@@ -1182,7 +1182,10 @@ function Update-MainLayout {
             Set-ControlBoundsSafe -Control $ButtonLegRemoverLinha -X 145 -Y $BottomY1 -W 120 -H 42
             Set-ControlBoundsSafe -Control $ButtonLegLimpar -X 275 -Y $BottomY1 -W 80 -H 42
             Set-ControlBoundsSafe -Control $ButtonLegAbrirSrt -X 365 -Y $BottomY1 -W 120 -H 42
-            Set-ControlBoundsSafe -Control $ButtonLegRedistribuir -X 495 -Y $BottomY1 -W 120 -H 42
+            Set-ControlBoundsSafe -Control $ButtonLegRedistribuir -X 495 -Y $BottomY1 -W 95 -H 42
+            Set-ControlBoundsSafe -Control $NumericLegAjusteGlobal -X 600 -Y ($BottomY1 + 9) -W 55 -H 24
+            Set-ControlBoundsSafe -Control $ButtonLegRecuarTodos -X 665 -Y $BottomY1 -W 75 -H 42
+            Set-ControlBoundsSafe -Control $ButtonLegAtrasarTodos -X 750 -Y $BottomY1 -W 80 -H 42
             Set-ControlBoundsSafe -Control $ButtonLegVideoLegendado -X 15 -Y $BottomY2 -W 190 -H 42
             Set-ControlBoundsSafe -Control $ButtonLegSalvarSrt -X ([Math]::Max(220, $EditorW - 165)) -Y $BottomY2 -W 150 -H 42
         }
@@ -6472,7 +6475,9 @@ function Update-ManualMarkerStatus {
 
     $Numero = [string]$Selecionada.Cells["Numero"].Value
     $Texto = [string]$Selecionada.Cells["Texto"].Value
-    if ($Texto.Length -gt 58) { $Texto = $Texto.Substring(0, 55) + "..." }
+    $Texto = ($Texto -replace "`r`n|`r|`n", " ") -replace '\s+', ' '
+    $Texto = $Texto.Trim()
+    if ($Texto.Length -gt 72) { $Texto = $Texto.Substring(0, 69) + "..." }
 
     $LabelLegMarcacaoStatus.Text = "Linha selecionada $($Numero): marque início e fim do trecho. $Texto"
 }
@@ -7095,6 +7100,56 @@ function Undo-LastSubtitleMark {
     $Row.Cells["Inicio"].Value = ""
     $Row.Cells["Fim"].Value = ""
     Update-ManualMarkerStatus
+}
+
+function Shift-AllSubtitleGridTimes {
+    param([double]$DeltaSeconds)
+
+    if ($null -eq $GridLegendas) { return }
+    if ([Math]::Abs($DeltaSeconds) -lt 0.0005) { return }
+
+    $ValidRows = New-Object System.Collections.Generic.List[object]
+    $MinStart = [double]::PositiveInfinity
+
+    foreach ($Row in $GridLegendas.Rows) {
+        if ($Row.IsNewRow) { continue }
+        $StartText = [string]$Row.Cells["Inicio"].Value
+        $EndText = [string]$Row.Cells["Fim"].Value
+        if ([string]::IsNullOrWhiteSpace($StartText) -or [string]::IsNullOrWhiteSpace($EndText)) { continue }
+        $Start = Parse-SrtTime -Text $StartText
+        $End = Parse-SrtTime -Text $EndText
+        if ($End -le $Start) { continue }
+        if ($Start -lt $MinStart) { $MinStart = $Start }
+        $ValidRows.Add([PSCustomObject]@{ Row=$Row; Start=[double]$Start; End=[double]$End }) | Out-Null
+    }
+
+    if ($ValidRows.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Não há tempos válidos na grade para ajustar.", "Ajuste global de tempos", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+        return
+    }
+
+    $AppliedDelta = [double]$DeltaSeconds
+    if ($AppliedDelta -lt 0 -and -not [double]::IsPositiveInfinity($MinStart)) {
+        $MaxBackward = [double]$MinStart
+        if ([Math]::Abs($AppliedDelta) -gt $MaxBackward) { $AppliedDelta = -$MaxBackward }
+    }
+
+    foreach ($Info in $ValidRows) {
+        $NewStart = [Math]::Max(0.0, [double]$Info.Start + $AppliedDelta)
+        $NewEnd = [Math]::Max(0.0, [double]$Info.End + $AppliedDelta)
+        $Info.Row.Cells["Inicio"].Value = Format-SrtTime -Seconds $NewStart
+        $Info.Row.Cells["Fim"].Value = Format-SrtTime -Seconds $NewEnd
+    }
+
+    $GridLegendas.Refresh()
+    Update-ManualMarkerStatus
+
+    if ([Math]::Abs($AppliedDelta - $DeltaSeconds) -gt 0.0005) {
+        $Req = [Math]::Abs($DeltaSeconds).ToString("0.###", [System.Globalization.CultureInfo]::CurrentCulture)
+        $Apl = [Math]::Abs($AppliedDelta).ToString("0.###", [System.Globalization.CultureInfo]::CurrentCulture)
+        $Msg = "O recuo solicitado de $Req s levaria a primeira legenda para antes de 00:00:00,000." + [Environment]::NewLine + "O recuo foi limitado a $Apl s."
+        [System.Windows.Forms.MessageBox]::Show($Msg, "Ajuste global de tempos", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    }
 }
 
 function Get-SelectedSubtitleItem {
@@ -9658,6 +9713,7 @@ $Form.Text = "Gerador e Publicador de Vídeos FREZZA"
 $Form.Size = New-Object System.Drawing.Size(1180, 850)
 Set-FormIcon -TargetForm $Form
 $Form.StartPosition = "CenterScreen"
+$Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
 $Form.Font = New-Object System.Drawing.Font("Century Gothic", 9)
 $Form.MinimumSize = New-Object System.Drawing.Size(1100, 760)
 $Form.KeyPreview = $true
@@ -10300,6 +10356,9 @@ $LabelLegMarcacaoStatus = New-Object System.Windows.Forms.Label
 $LabelLegMarcacaoStatus.Text = "Marcação: F9 = início, F10 = fim. No texto, SHIFT + ENTER quebra em 2 linhas mantendo o mesmo tempo."
 $LabelLegMarcacaoStatus.Location = New-Object System.Drawing.Point(15, 122)
 $LabelLegMarcacaoStatus.Size = New-Object System.Drawing.Size(705, 22)
+$LabelLegMarcacaoStatus.AutoSize = $false
+$LabelLegMarcacaoStatus.AutoEllipsis = $true
+$LabelLegMarcacaoStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
 $GridLegendas = New-Object System.Windows.Forms.DataGridView
 $GridLegendas.Location = New-Object System.Drawing.Point(15, 160)
@@ -10351,7 +10410,31 @@ $ButtonLegAbrirSrt.Size = New-Object System.Drawing.Size(120, 42)
 $ButtonLegRedistribuir = New-Object System.Windows.Forms.Button
 $ButtonLegRedistribuir.Text = "Redistribuir`ntempos"
 $ButtonLegRedistribuir.Location = New-Object System.Drawing.Point(495, 323)
-$ButtonLegRedistribuir.Size = New-Object System.Drawing.Size(120, 42)
+$ButtonLegRedistribuir.Size = New-Object System.Drawing.Size(95, 42)
+
+$NumericLegAjusteGlobal = New-Object System.Windows.Forms.NumericUpDown
+$NumericLegAjusteGlobal.Location = New-Object System.Drawing.Point(600, 332)
+$NumericLegAjusteGlobal.Size = New-Object System.Drawing.Size(55, 24)
+$NumericLegAjusteGlobal.DecimalPlaces = 1
+$NumericLegAjusteGlobal.Increment = 0.1
+$NumericLegAjusteGlobal.Minimum = 0.1
+$NumericLegAjusteGlobal.Maximum = 60
+$NumericLegAjusteGlobal.Value = 1.0
+
+$ButtonLegRecuarTodos = New-Object System.Windows.Forms.Button
+$ButtonLegRecuarTodos.Text = "← Recuar"
+$ButtonLegRecuarTodos.Location = New-Object System.Drawing.Point(665, 323)
+$ButtonLegRecuarTodos.Size = New-Object System.Drawing.Size(75, 42)
+
+$ButtonLegAtrasarTodos = New-Object System.Windows.Forms.Button
+$ButtonLegAtrasarTodos.Text = "Atrasar →"
+$ButtonLegAtrasarTodos.Location = New-Object System.Drawing.Point(750, 323)
+$ButtonLegAtrasarTodos.Size = New-Object System.Drawing.Size(80, 42)
+
+$ToolTipLegAjuste = New-Object System.Windows.Forms.ToolTip
+$ToolTipLegAjuste.SetToolTip($NumericLegAjusteGlobal, "Quantidade de segundos aplicada a todos os tempos.")
+$ToolTipLegAjuste.SetToolTip($ButtonLegRecuarTodos, "Subtrai esse valor de Início e Fim de todas as legendas.")
+$ToolTipLegAjuste.SetToolTip($ButtonLegAtrasarTodos, "Soma esse valor a Início e Fim de todas as legendas.")
 
 $ButtonLegVideoLegendado = New-Object System.Windows.Forms.Button
 $ButtonLegVideoLegendado.Text = "Gerar vídeo`ncom legenda"
@@ -10374,6 +10457,9 @@ $GroupLegEditor.Controls.AddRange(@(
     $GridLegendas,
     $ButtonLegAbrirSrt,
     $ButtonLegRedistribuir,
+    $NumericLegAjusteGlobal,
+    $ButtonLegRecuarTodos,
+    $ButtonLegAtrasarTodos,
     $ButtonLegVideoLegendado,
     $ButtonLegLimpar,
     $ButtonLegAdicionarLinha,
@@ -11261,6 +11347,16 @@ $ButtonLegRedistribuir.Add_Click({
 
     $Rows = @(New-SubtitleRowsFromLyrics -Lines $Lines -DurationSeconds ([double]$Item.Duration))
     Fill-SubtitleGrid -Rows $Rows
+})
+
+$ButtonLegRecuarTodos.Add_Click({
+    $Segundos = [double]$NumericLegAjusteGlobal.Value
+    Shift-AllSubtitleGridTimes -DeltaSeconds (-1.0 * $Segundos)
+})
+
+$ButtonLegAtrasarTodos.Add_Click({
+    $Segundos = [double]$NumericLegAjusteGlobal.Value
+    Shift-AllSubtitleGridTimes -DeltaSeconds $Segundos
 })
 
 $ButtonLegLimpar.Add_Click({
