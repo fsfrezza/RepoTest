@@ -8451,6 +8451,15 @@ function Show-BurnSubtitleVideoDialog {
     $PreviewSurface.BackColor = [System.Drawing.Color]::FromArgb(10, 10, 12)
     $PreviewSurface.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
+    # Reduz flicker durante atualizações da prévia.
+    try {
+        $DbProp = [System.Windows.Forms.Control].GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
+        if ($null -ne $DbProp) {
+            $DbProp.SetValue($PreviewPanel, $true, $null)
+            $DbProp.SetValue($PreviewSurface, $true, $null)
+        }
+    } catch { }
+
     $PreviewTitle = New-Object System.Windows.Forms.Label
     $PreviewTitle.Text = if ($null -ne $Item -and -not [string]::IsNullOrWhiteSpace([string]$Item.BaseName)) { [string]$Item.BaseName } else { "Nome da música" }
     $PreviewTitle.ForeColor = [System.Drawing.Color]::White
@@ -8474,6 +8483,9 @@ function Show-BurnSubtitleVideoDialog {
     $PreviewSubtitle.AutoSize = $false
     $PreviewSubtitle.Size = New-Object System.Drawing.Size(760, 50)
     $PreviewSubtitle.Cursor = [System.Windows.Forms.Cursors]::SizeNS
+    try {
+        if ($null -ne $DbProp) { $DbProp.SetValue($PreviewSubtitle, $true, $null) }
+    } catch { }
     $PreviewSubtitleTextOriginal = [string]$PreviewSubtitle.Text
     $PreviewSubtitle.Text = ""
     $PreviewSubtitle.Add_Paint({
@@ -8571,28 +8583,36 @@ function Show-BurnSubtitleVideoDialog {
     $PreviewState.PlaybackPaused = $false
     $PreviewState.PlaybackStopRequested = $false
 
-    # Mesmo princípio usado na aba Legendas: o WMP toca o áudio, mas um Stopwatch
-    # fornece o tempo visual entre as atualizações imprecisas de currentPosition.
-    $PreviewClock = [System.Diagnostics.Stopwatch]::New()
-    $PreviewClockBaseSeconds = 0.0
-    $PreviewClockRunning = $false
+    # Mesmo princípio usado na aba Legendas, mas TODO o estado mutável fica
+    # no hashtable compartilhado para sobreviver corretamente entre ScriptBlocks/cliques.
+    $PreviewState.Clock = [System.Diagnostics.Stopwatch]::New()
+    $PreviewState.ClockBaseSeconds = 0.0
+    $PreviewState.ClockRunning = $false
+    $PreviewState.LastRenderedSubtitleText = $null
+    $PreviewState.LastRenderedTitleVisible = $null
+    $PreviewState.LastClockLabel = ""
 
     $ResetPreviewClock = {
         param([double]$Seconds = 0.0, [bool]$Running = $false)
         if ($Seconds -lt 0) { $Seconds = 0.0 }
-        $PreviewClockBaseSeconds = [double]$Seconds
-        try { $PreviewClock.Reset() } catch { }
-        $PreviewClockRunning = $false
+        $PreviewState.ClockBaseSeconds = [double]$Seconds
+        try { $PreviewState.Clock.Reset() } catch { }
+        $PreviewState.ClockRunning = $false
         if ($Running) {
-            try { $PreviewClock.Start(); $PreviewClockRunning = $true } catch { }
+            try {
+                $PreviewState.Clock.Start()
+                $PreviewState.ClockRunning = $true
+            } catch { }
         }
     }
 
     $GetPreviewClockPosition = {
-        $P = [double]$PreviewClockBaseSeconds
-        if ($PreviewClockRunning -and $PreviewClock.IsRunning) {
-            $P += [double]$PreviewClock.Elapsed.TotalSeconds
-        }
+        $P = [double]$PreviewState.ClockBaseSeconds
+        try {
+            if ([bool]$PreviewState.ClockRunning -and $PreviewState.Clock.IsRunning) {
+                $P += [double]$PreviewState.Clock.Elapsed.TotalSeconds
+            }
+        } catch { }
         if ($P -lt 0) { $P = 0.0 }
         return $P
     }
@@ -8601,15 +8621,22 @@ function Show-BurnSubtitleVideoDialog {
         param([double]$OffsetSeconds)
         if ($null -eq $PreviewPlayer) { return }
 
+        $WasRunning = [bool]$PreviewState.ClockRunning
         $Current = & $GetPreviewClockPosition
         $Target = [double]$Current + [double]$OffsetSeconds
         $Duration = [double]$VideoDurationSeconds
         try { if ([double]$PreviewPlayer.currentMedia.duration -gt 0) { $Duration = [double]$PreviewPlayer.currentMedia.duration } } catch { }
+
         if ($Target -lt 0) { $Target = 0.0 }
         if ($Duration -gt 0 -and $Target -gt $Duration) { $Target = $Duration }
 
-        try { $PreviewPlayer.controls.currentPosition = $Target } catch { }
-        & $ResetPreviewClock $Target ([bool]$PreviewClockRunning)
+        try {
+            $PreviewPlayer.controls.currentPosition = $Target
+            if ($WasRunning) { $PreviewPlayer.controls.play() }
+        } catch { }
+
+        & $ResetPreviewClock $Target $WasRunning
+        $PreviewState.PlaybackTime = $Target
         & $UpdatePreviewPlaybackFrame $Target
     }
 
@@ -8664,22 +8691,34 @@ function Show-BurnSubtitleVideoDialog {
             }
         }
 
-        $PreviewState.SubtitleText = if ($ActiveTexts.Count -gt 0) { ($ActiveTexts -join [Environment]::NewLine) } else { "" }
+        $NewSubtitleText = if ($ActiveTexts.Count -gt 0) { ($ActiveTexts -join [Environment]::NewLine) } else { "" }
+        $SubtitleChanged = ([string]$PreviewState.SubtitleText -ne [string]$NewSubtitleText)
+        $PreviewState.SubtitleText = [string]$NewSubtitleText
 
         $TitleStart = Parse-MinSecDisplay -Text ([string]$TxtTituloInicio.Text)
         $TitleEnd = Parse-MinSecDisplay -Text ([string]$TxtTituloFim.Text)
         if ($null -eq $TitleStart) { $TitleStart = 0.0 }
         if ($null -eq $TitleEnd) { $TitleEnd = [double]$VideoDurationSeconds }
-        $PreviewState.TrackTitleVisible = ([bool]$CheckMostrarFaixaTitulo.Checked -and $Seconds -ge [double]$TitleStart -and $Seconds -lt [double]$TitleEnd)
+        $NewTitleVisible = ([bool]$CheckMostrarFaixaTitulo.Checked -and $Seconds -ge [double]$TitleStart -and $Seconds -lt [double]$TitleEnd)
+        $TitleChanged = ([bool]$PreviewState.TrackTitleVisible -ne [bool]$NewTitleVisible)
+        $PreviewState.TrackTitleVisible = [bool]$NewTitleVisible
 
         $Total = [double]$VideoDurationSeconds
         try {
             if ($null -ne $PreviewPlayer -and [double]$PreviewPlayer.currentMedia.duration -gt 0) { $Total = [double]$PreviewPlayer.currentMedia.duration }
         } catch { }
 
-        $LblPreviewTempo.Text = ((& $FormatPreviewClock $Seconds) + " / " + (& $FormatPreviewClock $Total))
-        $PreviewSurface.Invalidate()
-        $PreviewSubtitle.Invalidate()
+        $NewClockLabel = ((& $FormatPreviewClock $Seconds) + " / " + (& $FormatPreviewClock $Total))
+        if ([string]$LblPreviewTempo.Text -ne [string]$NewClockLabel) {
+            $LblPreviewTempo.Text = $NewClockLabel
+        }
+
+        # Evita repintar capa/fundo 20 vezes por segundo. Só redesenha quando algo visível muda.
+        if ($TitleChanged) { $PreviewSurface.Invalidate() }
+        if ($SubtitleChanged) {
+            $PreviewSubtitle.Invalidate()
+            $PreviewSubtitle.Update()
+        }
     }
 
     $StopPreviewPlayback = {
@@ -8721,7 +8760,7 @@ function Show-BurnSubtitleVideoDialog {
                 if ($State -eq 3) {
                     $StartupClock.Restart()
                     $PreviewState.PlaybackPaused = $false
-                    if (-not $PreviewClockRunning) {
+                    if (-not $PreviewState.ClockRunning) {
                         & $ResetPreviewClock $MediaPosPreview $true
                     }
                     $PosPreview = & $GetPreviewClockPosition
