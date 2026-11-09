@@ -7909,7 +7909,7 @@ function Invoke-BurnSubtitlesIntoVideo {
                 $TitleStartArg = ([double]$TrackTitleStartSeconds).ToString("0.###", [System.Globalization.CultureInfo]::InvariantCulture)
                 $TitleEndArg = ([double]$TrackTitleEndSeconds).ToString("0.###", [System.Globalization.CultureInfo]::InvariantCulture)
                 $TitleEnable = "between(t\,$TitleStartArg\,$TitleEndArg)"
-                $TitleOverlay = "drawbox=x=0:y=$TitleBandY:w=iw:h=$TitleBandHeight:color=black@0.68:t=fill:enable='$TitleEnable',drawtext=fontfile='$FontTitleFfmpeg':text='$TrackTitleEscaped':x=(w-text_w)/2:y=$TitleTextY:fontsize=$TitleFontSize:fontcolor=white:borderw=2:bordercolor=black@0.85:enable='$TitleEnable'"
+                $TitleOverlay = "drawbox=x=0:y=${TitleBandY}:w=iw:h=${TitleBandHeight}:color=black@0.68:t=fill:enable='$TitleEnable',drawtext=fontfile='$FontTitleFfmpeg':text='$TrackTitleEscaped':x=(w-text_w)/2:y=${TitleTextY}:fontsize=${TitleFontSize}:fontcolor=white:borderw=2:bordercolor=black@0.85:enable='$TitleEnable'"
                 $VideoFilter = $SubtitleFilter + "," + $TitleOverlay
             }
         }
@@ -8022,7 +8022,7 @@ function Invoke-BurnMultipleSubtitlesIntoVideo {
                 $TitleStartArg=([double]$TrackTitleStartSeconds).ToString("0.###",[System.Globalization.CultureInfo]::InvariantCulture)
                 $TitleEndArg=([double]$TrackTitleEndSeconds).ToString("0.###",[System.Globalization.CultureInfo]::InvariantCulture)
                 $TitleEnable="between(t\,$TitleStartArg\,$TitleEndArg)"
-                $TitleOverlay="drawbox=x=0:y=$TitleBandY:w=iw:h=$TitleBandHeight:color=black@0.68:t=fill:enable='$TitleEnable',drawtext=fontfile='$FontTitleFfmpeg':text='$TrackTitleEscaped':x=(w-text_w)/2:y=(h-text_h)/2:fontsize=$TitleFontSize:fontcolor=white:borderw=2:bordercolor=black@0.85:enable='$TitleEnable'"
+                $TitleOverlay="drawbox=x=0:y=${TitleBandY}:w=iw:h=${TitleBandHeight}:color=black@0.68:t=fill:enable='$TitleEnable',drawtext=fontfile='$FontTitleFfmpeg':text='$TrackTitleEscaped':x=(w-text_w)/2:y=(h-text_h)/2:fontsize=${TitleFontSize}:fontcolor=white:borderw=2:bordercolor=black@0.85:enable='$TitleEnable'"
                 $FilterChain=$FilterChain+","+$TitleOverlay
             }
         }
@@ -8210,6 +8210,27 @@ function Show-BurnSubtitleVideoDialog {
 
     $LblPreview = New-Label -Text "Prévia da posição:" -X 15 -Y 350 -Width 160
 
+    $BtnPreviewTocar = New-Object System.Windows.Forms.Button
+    $BtnPreviewTocar.Text = "▶"
+    $BtnPreviewTocar.Location = New-Object System.Drawing.Point(555, 344)
+    $BtnPreviewTocar.Size = New-Object System.Drawing.Size(42, 27)
+
+    $BtnPreviewPausar = New-Object System.Windows.Forms.Button
+    $BtnPreviewPausar.Text = "⏸"
+    $BtnPreviewPausar.Location = New-Object System.Drawing.Point(602, 344)
+    $BtnPreviewPausar.Size = New-Object System.Drawing.Size(42, 27)
+
+    $BtnPreviewParar = New-Object System.Windows.Forms.Button
+    $BtnPreviewParar.Text = "⏹"
+    $BtnPreviewParar.Location = New-Object System.Drawing.Point(649, 344)
+    $BtnPreviewParar.Size = New-Object System.Drawing.Size(42, 27)
+
+    $LblPreviewTempo = New-Object System.Windows.Forms.Label
+    $LblPreviewTempo.Text = "00:00 / 00:00"
+    $LblPreviewTempo.Location = New-Object System.Drawing.Point(700, 348)
+    $LblPreviewTempo.Size = New-Object System.Drawing.Size(170, 22)
+    $LblPreviewTempo.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+
     $CheckMostrarFaixaTitulo = New-Object System.Windows.Forms.CheckBox
     $CheckMostrarFaixaTitulo.Text = "Mostrar faixa com o nome da música"
     $CheckMostrarFaixaTitulo.Location = New-Object System.Drawing.Point(15, 319)
@@ -8277,7 +8298,7 @@ function Show-BurnSubtitleVideoDialog {
             $FmtSub.Alignment = [System.Drawing.StringAlignment]::Center
             $FmtSub.LineAlignment = [System.Drawing.StringAlignment]::Center
             $TextoSub = [string]$PreviewState.SubtitleText
-            if ([string]::IsNullOrWhiteSpace($TextoSub)) { $TextoSub = "Prévia da legenda centralizada" }
+            if ([string]::IsNullOrWhiteSpace($TextoSub) -and -not [bool]$PreviewState.PlaybackMode) { $TextoSub = "Prévia da legenda centralizada" }
             $Intensidade = 70
             try { $Intensidade = [int]$NumSombraIntensidade.Value } catch { }
             if ($Intensidade -lt 0) { $Intensidade = 0 }
@@ -8346,7 +8367,107 @@ function Show-BurnSubtitleVideoDialog {
         CoverImage = $null
         CoverImagePath = ""
         ShowTrackTitle = $true
+        TrackTitleVisible = $true
+        PlaybackMode = $false
+        PlaybackTime = 0.0
     }
+
+    $PreviewPlayer = $null
+    $PreviewPlaybackTimer = New-Object System.Windows.Forms.Timer
+    $PreviewPlaybackTimer.Interval = 80
+
+    $FormatPreviewClock = {
+        param([double]$Seconds)
+        if ($Seconds -lt 0) { $Seconds = 0 }
+        $Ts = [TimeSpan]::FromSeconds($Seconds)
+        if ($Ts.TotalHours -ge 1) { return ("{0:00}:{1:00}:{2:00}" -f [int]$Ts.TotalHours, $Ts.Minutes, $Ts.Seconds) }
+        return ("{0:00}:{1:00}" -f [int]$Ts.TotalMinutes, $Ts.Seconds)
+    }
+
+    $GetPreviewMediaPath = {
+        $Path = [string]$TxtVideo.Text
+        if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
+        try {
+            $Path = [string]$Item.FilePath
+            if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
+        } catch { }
+        try {
+            $Path = [string]$Item.MusicFile.FullName
+            if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-SafePath -Path $Path)) { return $Path }
+        } catch { }
+        return ""
+    }
+
+    $UpdatePreviewPlaybackFrame = {
+        param([double]$Seconds)
+
+        $PreviewState.PlaybackMode = $true
+        $PreviewState.PlaybackTime = [double]$Seconds
+
+        $ActiveTexts = New-Object System.Collections.Generic.List[string]
+        foreach ($Layer in @($SubtitleLayers)) {
+            if ($null -eq $Layer) { continue }
+            $LayerStart = 0.0
+            $LayerEnd = [double]$VideoDurationSeconds
+            try { $LayerStart = [double]$Layer.StartAt } catch { }
+            try { $LayerEnd = [double]$Layer.EndAt } catch { }
+            if ($Seconds -lt $LayerStart -or $Seconds -ge $LayerEnd) { continue }
+
+            foreach ($R in @($Layer.Rows)) {
+                if ($null -eq $R) { continue }
+                $RS = Parse-SrtTime -Text ([string]$R.Start)
+                $RE = Parse-SrtTime -Text ([string]$R.End)
+                if ($RE -le $RS) { continue }
+                if ($Seconds -ge $RS -and $Seconds -lt $RE) {
+                    $T = [string]$R.Text
+                    if (-not [string]::IsNullOrWhiteSpace($T)) { $ActiveTexts.Add($T) }
+                    break
+                }
+            }
+        }
+
+        $PreviewState.SubtitleText = if ($ActiveTexts.Count -gt 0) { ($ActiveTexts -join [Environment]::NewLine) } else { "" }
+
+        $TitleStart = Parse-MinSecDisplay -Text ([string]$TxtTituloInicio.Text)
+        $TitleEnd = Parse-MinSecDisplay -Text ([string]$TxtTituloFim.Text)
+        if ($null -eq $TitleStart) { $TitleStart = 0.0 }
+        if ($null -eq $TitleEnd) { $TitleEnd = [double]$VideoDurationSeconds }
+        $PreviewState.TrackTitleVisible = ([bool]$CheckMostrarFaixaTitulo.Checked -and $Seconds -ge [double]$TitleStart -and $Seconds -lt [double]$TitleEnd)
+
+        $Total = [double]$VideoDurationSeconds
+        try {
+            if ($null -ne $PreviewPlayer -and [double]$PreviewPlayer.currentMedia.duration -gt 0) { $Total = [double]$PreviewPlayer.currentMedia.duration }
+        } catch { }
+
+        $LblPreviewTempo.Text = ((& $FormatPreviewClock $Seconds) + " / " + (& $FormatPreviewClock $Total))
+        $PreviewSurface.Invalidate()
+        $PreviewSubtitle.Invalidate()
+    }
+
+    $StopPreviewPlayback = {
+        try { $PreviewPlaybackTimer.Stop() } catch { }
+        try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.controls.stop() } } catch { }
+        $PreviewState.PlaybackMode = $false
+        $PreviewState.PlaybackTime = 0.0
+        $PreviewState.SubtitleText = [string]$PreviewSubtitleTextOriginal
+        $PreviewState.TrackTitleVisible = $true
+        $LblPreviewTempo.Text = "00:00 / " + (& $FormatPreviewClock ([double]$VideoDurationSeconds))
+        $PreviewSurface.Invalidate()
+        $PreviewSubtitle.Invalidate()
+    }
+
+    $PreviewPlaybackTimer.Add_Tick({
+        try {
+            if ($null -eq $PreviewPlayer) { return }
+            $State = [int]$PreviewPlayer.playState
+            if ($State -eq 3) {
+                & $UpdatePreviewPlaybackFrame ([double]$PreviewPlayer.controls.currentPosition)
+            }
+            elseif ($State -in @(1, 8, 10)) {
+                & $StopPreviewPlayback
+            }
+        } catch { }
+    })
 
     $GetTrackTitleFontSize = {
         param([string]$Text)
@@ -8409,7 +8530,7 @@ function Show-BurnSubtitleVideoDialog {
             $EscalaVideo = [double]$PreviewState.Scale
             if ($EscalaVideo -le 0) { $EscalaVideo = [Math]::Min([double]$PreviewSurface.ClientSize.Width / 1920.0, [double]$PreviewSurface.ClientSize.Height / 1920.0) }
 
-            if ([bool]$PreviewState.ShowTrackTitle) {
+            if ([bool]$PreviewState.ShowTrackTitle -and [bool]$PreviewState.TrackTitleVisible) {
             $TituloPreview = if ($null -ne $Item -and -not [string]::IsNullOrWhiteSpace([string]$Item.BaseName)) { [string]$Item.BaseName } else { "Nome da música" }
             $TituloPreview = Limit-TextForImage -Text $TituloPreview -MaxChars 42
             $TitleSizeBase = & $GetTrackTitleFontSize $TituloPreview
@@ -8442,6 +8563,8 @@ function Show-BurnSubtitleVideoDialog {
     })
 
     $Dialog.Add_FormClosed({
+        try { $PreviewPlaybackTimer.Stop(); $PreviewPlaybackTimer.Dispose() } catch { }
+        try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.controls.stop(); $PreviewPlayer.close(); $PreviewPlayer = $null } } catch { }
         try { if ($null -ne $PreviewState.CoverImage) { $PreviewState.CoverImage.Dispose(); $PreviewState.CoverImage = $null } } catch { }
     })
 
@@ -8526,6 +8649,8 @@ function Show-BurnSubtitleVideoDialog {
         finally { $PreviewState.Updating = $false }
     }
 
+    $LblPreviewTempo.Text = "00:00 / " + (& $FormatPreviewClock ([double]$VideoDurationSeconds))
+
     $LblStatus = New-Object System.Windows.Forms.Label
     $LblStatus.Text = "Pronto."
     $LblStatus.Location = New-Object System.Drawing.Point(15, 690)
@@ -8541,6 +8666,48 @@ function Show-BurnSubtitleVideoDialog {
     $BtnFechar.Location = New-Object System.Drawing.Point(775, 725)
     $BtnFechar.Size = New-Object System.Drawing.Size(110, 36)
     $BtnFechar.Add_Click({ $Dialog.Close() })
+
+    $BtnPreviewTocar.Add_Click({
+        try {
+            $MediaPath = & $GetPreviewMediaPath
+            if ([string]::IsNullOrWhiteSpace($MediaPath)) {
+                [System.Windows.Forms.MessageBox]::Show("Selecione um vídeo ou mantenha a música disponível para reproduzir a prévia.", "Prévia", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                return
+            }
+
+            if ($null -eq $PreviewPlayer) {
+                $PreviewPlayer = New-Object -ComObject WMPlayer.OCX
+                $PreviewPlayer.settings.autoStart = $false
+            }
+
+            if ([string]$PreviewPlayer.URL -ne $MediaPath) {
+                $PreviewPlayer.URL = $MediaPath
+                Start-Sleep -Milliseconds 120
+            }
+
+            $PreviewState.PlaybackMode = $true
+            $PreviewPlayer.controls.play()
+            $PreviewPlaybackTimer.Start()
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Não foi possível reproduzir a prévia: $($_.Exception.Message)", "Prévia", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        }
+    })
+
+    $BtnPreviewPausar.Add_Click({
+        try {
+            if ($null -ne $PreviewPlayer) {
+                $PosPreview = [double]$PreviewPlayer.controls.currentPosition
+                $PreviewPlayer.controls.pause()
+                $PreviewPlaybackTimer.Stop()
+                & $UpdatePreviewPlaybackFrame $PosPreview
+            }
+        } catch { }
+    })
+
+    $BtnPreviewParar.Add_Click({
+        & $StopPreviewPlayback
+    })
 
     $BtnCor.Add_Click({
         $ColorDialog = New-Object System.Windows.Forms.ColorDialog
@@ -8706,6 +8873,9 @@ function Show-BurnSubtitleVideoDialog {
         $Open.Filter = "Vídeos MP4|*.mp4|Vídeos|*.mp4;*.mkv;*.mov;*.avi|Todos os arquivos|*.*"
         $Open.Multiselect = $false
         if ($Open.ShowDialog($Dialog) -eq [System.Windows.Forms.DialogResult]::OK) {
+            & $StopPreviewPlayback
+            try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.close() } } catch { }
+            $PreviewPlayer = $null
             $TxtVideo.Text = $Open.FileName
             $TxtSaida.Text = Get-DefaultBurnedSubtitleVideoPath -Item $Item -VideoPath $Open.FileName
             try {
@@ -8840,7 +9010,7 @@ function Show-BurnSubtitleVideoDialog {
         $LblPosicao, $ComboPosicao,
         $LblMargem, $NumMargem,
         $LblModoExibicao, $ComboModoExibicao, $BtnMultiplasLegendas, $LblMultiplasLegendasStatus, $LblModoAjuda,
-        $LblPreview, $CheckMostrarFaixaTitulo, $LblTituloInicio, $TxtTituloInicio, $LblTituloFim, $TxtTituloFim, $LblTituloTempoInfo, $PreviewPanel,
+        $LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $LblPreviewTempo, $CheckMostrarFaixaTitulo, $LblTituloInicio, $TxtTituloInicio, $LblTituloFim, $TxtTituloFim, $LblTituloTempoInfo, $PreviewPanel,
         $LblStatus,
         $BtnGerar, $BtnFechar
     ))
