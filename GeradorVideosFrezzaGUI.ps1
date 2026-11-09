@@ -6085,6 +6085,33 @@ function Get-SubtitleRowsFromGrid {
     return $Rows
 }
 
+function Set-SubtitleGridRowHeightForText {
+    param(
+        [System.Windows.Forms.DataGridViewRow]$Row,
+        [string]$Text
+    )
+
+    if ($null -eq $Row) { return }
+
+    $Normalized = ([string]$Text) -replace "`r`n", "`n"
+    $Normalized = $Normalized -replace "`r", "`n"
+    $LineCount = @($Normalized -split "`n").Count
+    if ($LineCount -lt 1) { $LineCount = 1 }
+
+    $BaseHeight = [Math]::Max(24, [int]$GridLegendas.RowTemplate.Height)
+    $TargetHeight = [Math]::Max($BaseHeight, (22 * $LineCount) + 6)
+    if ($TargetHeight -gt 120) { $TargetHeight = 120 }
+
+    try { $Row.Height = $TargetHeight } catch { }
+}
+
+function Mark-SubtitleGridCellAsInternalMultiline {
+    param([System.Windows.Forms.DataGridViewCell]$Cell)
+
+    if ($null -eq $Cell) { return }
+    try { $Cell.Tag = "InternalMultiline" } catch { }
+}
+
 function Fill-SubtitleGrid {
     param([object[]]$Rows)
 
@@ -6094,12 +6121,22 @@ function Fill-SubtitleGrid {
     $Index = 1
 
     foreach ($Row in $Rows) {
+        $Text = [string]$Row.Text
         $RowIndex = $GridLegendas.Rows.Add(
             $Index,
             [string]$Row.Start,
             [string]$Row.End,
-            [string]$Row.Text
+            $Text
         )
+
+        if ($RowIndex -ge 0 -and $RowIndex -lt $GridLegendas.Rows.Count) {
+            $GridRow = $GridLegendas.Rows[$RowIndex]
+            if ($Text -match "`r|`n") {
+                Mark-SubtitleGridCellAsInternalMultiline -Cell $GridRow.Cells["Texto"]
+            }
+            Set-SubtitleGridRowHeightForText -Row $GridRow -Text $Text
+        }
+
         $Index++
     }
 
@@ -10069,7 +10106,7 @@ $ButtonLegDesfazerMarcacao.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $ButtonLegDesfazerMarcacao.BackColor = [System.Drawing.Color]::WhiteSmoke
 
 $LabelLegMarcacaoStatus = New-Object System.Windows.Forms.Label
-$LabelLegMarcacaoStatus.Text = "Marcação: selecione uma linha e use Início do Trecho / Fim do Trecho. F9 = início, F10 = fim."
+$LabelLegMarcacaoStatus.Text = "Marcação: F9 = início, F10 = fim. No texto, SHIFT + ENTER quebra em 2 linhas mantendo o mesmo tempo."
 $LabelLegMarcacaoStatus.Location = New-Object System.Drawing.Point(15, 122)
 $LabelLegMarcacaoStatus.Size = New-Object System.Drawing.Size(705, 22)
 
@@ -10097,6 +10134,7 @@ $ColLegFim.Name = "Fim"; $ColLegFim.HeaderText = "Fim"; $ColLegFim.Width = 100
 
 $ColLegTexto = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $ColLegTexto.Name = "Texto"; $ColLegTexto.HeaderText = "Texto"; $ColLegTexto.Width = 400
+$ColLegTexto.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
 [void]$GridLegendas.Columns.Add($ColLegTexto)
 
 $ButtonLegAdicionarLinha = New-Object System.Windows.Forms.Button
@@ -11186,6 +11224,45 @@ $script:LegTimeEditKeyPressHandler = [System.Windows.Forms.KeyPressEventHandler]
     $e.Handled = $true
 }
 
+$script:LegInternalLineBreakInProgress = $false
+
+$script:LegTextInternalBreakKeyDownHandler = [System.Windows.Forms.KeyEventHandler]{
+    param($sender, $e)
+
+    if (-not ($e.Shift -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Enter)) { return }
+    if ($sender -isnot [System.Windows.Forms.TextBox]) { return }
+    if ($null -eq $GridLegendas.CurrentCell) { return }
+    if ($GridLegendas.Columns[$GridLegendas.CurrentCell.ColumnIndex].Name -ne "Texto") { return }
+
+    $TextBox = [System.Windows.Forms.TextBox]$sender
+
+    try {
+        $script:LegInternalLineBreakInProgress = $true
+
+        $Start = [int]$TextBox.SelectionStart
+        $Length = [int]$TextBox.SelectionLength
+        $Before = if ($Start -gt 0) { $TextBox.Text.Substring(0, $Start) } else { "" }
+        $AfterStart = $Start + $Length
+        $After = if ($AfterStart -lt $TextBox.Text.Length) { $TextBox.Text.Substring($AfterStart) } else { "" }
+
+        $Break = [Environment]::NewLine
+        $TextBox.Text = $Before + $Break + $After
+        $TextBox.SelectionStart = $Start + $Break.Length
+        $TextBox.SelectionLength = 0
+
+        Mark-SubtitleGridCellAsInternalMultiline -Cell $GridLegendas.CurrentCell
+
+        $Row = $GridLegendas.Rows[$GridLegendas.CurrentCell.RowIndex]
+        Set-SubtitleGridRowHeightForText -Row $Row -Text ([string]$TextBox.Text)
+
+        $e.SuppressKeyPress = $true
+        $e.Handled = $true
+    }
+    finally {
+        $script:LegInternalLineBreakInProgress = $false
+    }
+}
+
 $script:LegTextPasteKeyDownHandler = [System.Windows.Forms.KeyEventHandler]{
     param($sender, $e)
 
@@ -11221,6 +11298,7 @@ $script:LegTextPasteTextChangedHandler = [System.EventHandler]{
     param($sender, $e)
 
     if ($script:HandlingLegMultilinePaste) { return }
+    if ($script:LegInternalLineBreakInProgress) { return }
     if ($sender -isnot [System.Windows.Forms.TextBox]) { return }
 
     $TextBox = [System.Windows.Forms.TextBox]$sender
@@ -11255,16 +11333,24 @@ $GridLegendas.Add_EditingControlShowing({
 
     $TextBox = [System.Windows.Forms.TextBox]$e.Control
     $TextBox.remove_KeyPress($script:LegTimeEditKeyPressHandler)
+    $TextBox.remove_KeyDown($script:LegTextInternalBreakKeyDownHandler)
     $TextBox.remove_KeyDown($script:LegTextPasteKeyDownHandler)
     $TextBox.remove_KeyDown($script:LegTextCopyKeyDownHandler)
     $TextBox.remove_TextChanged($script:LegTextPasteTextChangedHandler)
     $TextBox.MaxLength = 32767
+    $TextBox.Multiline = $false
+    $TextBox.AcceptsReturn = $false
+    $TextBox.WordWrap = $true
 
     if ($GridLegendas.CurrentCell -and $GridLegendas.Columns[$GridLegendas.CurrentCell.ColumnIndex].Name -in @("Inicio", "Fim")) {
         $TextBox.MaxLength = 12
         $TextBox.add_KeyPress($script:LegTimeEditKeyPressHandler)
     }
     elseif ($GridLegendas.CurrentCell -and $GridLegendas.Columns[$GridLegendas.CurrentCell.ColumnIndex].Name -eq "Texto") {
+        $TextBox.Multiline = $true
+        $TextBox.AcceptsReturn = $true
+        $TextBox.WordWrap = $true
+        $TextBox.add_KeyDown($script:LegTextInternalBreakKeyDownHandler)
         $TextBox.add_KeyDown($script:LegTextPasteKeyDownHandler)
         $TextBox.add_KeyDown($script:LegTextCopyKeyDownHandler)
         $TextBox.add_TextChanged($script:LegTextPasteTextChangedHandler)
@@ -11281,16 +11367,35 @@ $GridLegendas.Add_CellEndEdit({
     $ColumnName = $GridLegendas.Columns[$e.ColumnIndex].Name
     if ($ColumnName -ne "Texto") { return }
 
-    $Value = [string]$GridLegendas.Rows[$e.RowIndex].Cells[$e.ColumnIndex].Value
+    $Cell = $GridLegendas.Rows[$e.RowIndex].Cells[$e.ColumnIndex]
+    $Value = [string]$Cell.Value
+
     if ($Value -match "`r|`n") {
+        $IsInternalMultiline = $false
+        try { $IsInternalMultiline = ([string]$Cell.Tag -eq "InternalMultiline") } catch { }
+
+        if ($IsInternalMultiline) {
+            # SHIFT+ENTER: mantém um único bloco SRT e um único intervalo.
+            $Normalized = $Value -replace "`r`n", [Environment]::NewLine
+            $Normalized = $Normalized -replace "`r(?!`n)", [Environment]::NewLine
+            $Cell.Value = $Normalized
+            Set-SubtitleGridRowHeightForText -Row $GridLegendas.Rows[$e.RowIndex] -Text $Normalized
+            return
+        }
+
+        # Quebra proveniente de colagem comum continua criando linhas separadas.
         try {
             $script:HandlingLegMultilinePaste = $true
-            $GridLegendas.CurrentCell = $GridLegendas.Rows[$e.RowIndex].Cells[$e.ColumnIndex]
+            $GridLegendas.CurrentCell = $Cell
             Set-SubtitleGridTextCellFromMultilinePaste -Text $Value | Out-Null
         }
         finally {
             $script:HandlingLegMultilinePaste = $false
         }
+    }
+    else {
+        try { $Cell.Tag = $null } catch { }
+        Set-SubtitleGridRowHeightForText -Row $GridLegendas.Rows[$e.RowIndex] -Text $Value
     }
 })
 
