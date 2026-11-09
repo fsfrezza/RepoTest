@@ -7924,6 +7924,7 @@ function New-AssFileFromSubtitleRows {
 function Invoke-BurnSubtitlesIntoVideo {
     param(
         [string]$VideoPath,
+        [string]$AudioPath = "",
         [object[]]$Rows,
         [string]$OutputPath,
         [string]$FontName = "Century Gothic",
@@ -8012,17 +8013,39 @@ function Invoke-BurnSubtitlesIntoVideo {
             }
         }
 
-        $Argumentos = @(
-            "-y",
-            "-i", $VideoPath,
-            "-vf", $VideoFilter,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "18",
-            "-c:a", "copy",
-            "-movflags", "+faststart",
-            $OutputPath
-        )
+        $UseExternalAudio = (-not [string]::IsNullOrWhiteSpace($AudioPath) -and (Test-SafePath -Path $AudioPath))
+        if ($UseExternalAudio) {
+            # O SRT é criado ouvindo o MP3. Usa o mesmo MP3 no resultado final para
+            # impedir que eventual atraso do áudio já existente no MP4 desloque a legenda.
+            $Argumentos = @(
+                "-y",
+                "-i", $VideoPath,
+                "-i", $AudioPath,
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-vf", $VideoFilter,
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                $OutputPath
+            )
+        }
+        else {
+            $Argumentos = @(
+                "-y",
+                "-i", $VideoPath,
+                "-vf", $VideoFilter,
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                $OutputPath
+            )
+        }
 
         Add-Log -LogBox $LogBox -Mensagem ""
         Add-Log -LogBox $LogBox -Mensagem "Gerando vídeo com legenda embutida..."
@@ -8082,7 +8105,7 @@ function Invoke-BurnSubtitlesIntoVideo {
 
 function Invoke-BurnMultipleSubtitlesIntoVideo {
     param(
-        [string]$VideoPath,[object[]]$Layers,[string]$OutputPath,
+        [string]$VideoPath,[string]$AudioPath="",[object[]]$Layers,[string]$OutputPath,
         [string]$FontName="Century Gothic",[int]$FontSize=90,[int]$MarginV=0,
         [System.Drawing.Color]$FontColor=[System.Drawing.Color]::White,[System.Drawing.Color]$ShadowColor=[System.Drawing.Color]::Black,
         [int]$ShadowIntensity=100,[int]$ShadowSpread=4,[bool]$ShowTrackTitle=$false,[string]$TrackTitle="",
@@ -8125,7 +8148,12 @@ function Invoke-BurnMultipleSubtitlesIntoVideo {
             }
         }
         Add-Log -LogBox $LogBox -Mensagem ("Gerando vídeo com {0} legendas simultâneas." -f $Filters.Count)
-        $Args=@('-y','-i',$VideoPath,'-vf',$FilterChain,'-c:v','libx264','-preset','veryfast','-crf','18','-c:a','copy','-movflags','+faststart',$OutputPath)
+        $UseExternalAudio=(-not [string]::IsNullOrWhiteSpace($AudioPath) -and (Test-SafePath -Path $AudioPath))
+        if($UseExternalAudio){
+            $Args=@('-y','-i',$VideoPath,'-i',$AudioPath,'-map','0:v:0','-map','1:a:0','-vf',$FilterChain,'-c:v','libx264','-preset','veryfast','-crf','18','-c:a','aac','-b:a','192k','-movflags','+faststart',$OutputPath)
+        } else {
+            $Args=@('-y','-i',$VideoPath,'-vf',$FilterChain,'-c:v','libx264','-preset','veryfast','-crf','18','-c:a','copy','-movflags','+faststart',$OutputPath)
+        }
         $Code=Invoke-Ffmpeg -FfmpegPath $FfmpegPath -Argumentos $Args -Detalhado $false -StatusLabel $StatusLabel -LogBox $LogBox
         if($Code -eq -999){return $false}
         return (Test-SafePath -Path $OutputPath)
@@ -8153,6 +8181,15 @@ function Show-BurnSubtitleVideoDialog {
 
     $DefaultVideo = Get-DefaultSubtitleVideoPathForItem -Item $Item
     if (-not (Test-SafePath -Path $DefaultVideo)) { $DefaultVideo = "" }
+
+    $OriginalAudioPath = ""
+    try {
+        $OriginalAudioPath = [string]$Item.FilePath
+        if ([string]::IsNullOrWhiteSpace($OriginalAudioPath) -or -not (Test-SafePath -Path $OriginalAudioPath)) {
+            $OriginalAudioPath = [string]$Item.MusicFile.FullName
+        }
+    } catch { $OriginalAudioPath = "" }
+    if (-not (Test-SafePath -Path $OriginalAudioPath)) { $OriginalAudioPath = "" }
     $DefaultOutput = Get-DefaultBurnedSubtitleVideoPath -Item $Item -VideoPath $DefaultVideo
 
     $VideoDurationSeconds = 0.0
@@ -8326,10 +8363,20 @@ function Show-BurnSubtitleVideoDialog {
     $BtnPreviewParar.Size = New-Object System.Drawing.Size(95, 28)
     $BtnPreviewParar.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
 
+    $BtnPreviewVoltar5 = New-Object System.Windows.Forms.Button
+    $BtnPreviewVoltar5.Text = "−5 s"
+    $BtnPreviewVoltar5.Location = New-Object System.Drawing.Point(485, 344)
+    $BtnPreviewVoltar5.Size = New-Object System.Drawing.Size(64, 28)
+
+    $BtnPreviewAvancar5 = New-Object System.Windows.Forms.Button
+    $BtnPreviewAvancar5.Text = "+5 s"
+    $BtnPreviewAvancar5.Location = New-Object System.Drawing.Point(555, 344)
+    $BtnPreviewAvancar5.Size = New-Object System.Drawing.Size(64, 28)
+
     $LblPreviewTempo = New-Object System.Windows.Forms.Label
     $LblPreviewTempo.Text = "00:00 / 00:00"
-    $LblPreviewTempo.Location = New-Object System.Drawing.Point(485, 347)
-    $LblPreviewTempo.Size = New-Object System.Drawing.Size(180, 22)
+    $LblPreviewTempo.Location = New-Object System.Drawing.Point(630, 347)
+    $LblPreviewTempo.Size = New-Object System.Drawing.Size(235, 22)
     $LblPreviewTempo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
     $CheckMostrarFaixaTitulo = New-Object System.Windows.Forms.CheckBox
@@ -8484,6 +8531,48 @@ function Show-BurnSubtitleVideoDialog {
     $PreviewState.PlaybackPaused = $false
     $PreviewState.PlaybackStopRequested = $false
 
+    # Mesmo princípio usado na aba Legendas: o WMP toca o áudio, mas um Stopwatch
+    # fornece o tempo visual entre as atualizações imprecisas de currentPosition.
+    $PreviewClock = [System.Diagnostics.Stopwatch]::New()
+    $PreviewClockBaseSeconds = 0.0
+    $PreviewClockRunning = $false
+
+    $ResetPreviewClock = {
+        param([double]$Seconds = 0.0, [bool]$Running = $false)
+        if ($Seconds -lt 0) { $Seconds = 0.0 }
+        $PreviewClockBaseSeconds = [double]$Seconds
+        try { $PreviewClock.Reset() } catch { }
+        $PreviewClockRunning = $false
+        if ($Running) {
+            try { $PreviewClock.Start(); $PreviewClockRunning = $true } catch { }
+        }
+    }
+
+    $GetPreviewClockPosition = {
+        $P = [double]$PreviewClockBaseSeconds
+        if ($PreviewClockRunning -and $PreviewClock.IsRunning) {
+            $P += [double]$PreviewClock.Elapsed.TotalSeconds
+        }
+        if ($P -lt 0) { $P = 0.0 }
+        return $P
+    }
+
+    $SeekPreviewPlayback = {
+        param([double]$OffsetSeconds)
+        if ($null -eq $PreviewPlayer) { return }
+
+        $Current = & $GetPreviewClockPosition
+        $Target = [double]$Current + [double]$OffsetSeconds
+        $Duration = [double]$VideoDurationSeconds
+        try { if ([double]$PreviewPlayer.currentMedia.duration -gt 0) { $Duration = [double]$PreviewPlayer.currentMedia.duration } } catch { }
+        if ($Target -lt 0) { $Target = 0.0 }
+        if ($Duration -gt 0 -and $Target -gt $Duration) { $Target = $Duration }
+
+        try { $PreviewPlayer.controls.currentPosition = $Target } catch { }
+        & $ResetPreviewClock $Target ([bool]$PreviewClockRunning)
+        & $UpdatePreviewPlaybackFrame $Target
+    }
+
     $FormatPreviewClock = {
         param([double]$Seconds)
         if ($Seconds -lt 0) { $Seconds = 0 }
@@ -8557,6 +8646,7 @@ function Show-BurnSubtitleVideoDialog {
         $PreviewState.PlaybackStopRequested = $true
         $PreviewState.PlaybackPaused = $false
         try { if ($null -ne $PreviewPlayer) { $PreviewPlayer.controls.stop() } } catch { }
+        & $ResetPreviewClock 0.0 $false
         $PreviewState.PlaybackMode = $false
         $PreviewState.PlaybackTime = 0.0
         $PreviewState.SubtitleText = [string]$PreviewSubtitleTextOriginal
@@ -8582,20 +8672,26 @@ function Show-BurnSubtitleVideoDialog {
                 [System.Windows.Forms.Application]::DoEvents()
 
                 $State = 0
-                $PosPreview = 0.0
+                $MediaPosPreview = 0.0
                 try {
                     $State = [int]$PreviewPlayer.playState
-                    $PosPreview = [double]$PreviewPlayer.controls.currentPosition
+                    $MediaPosPreview = [double]$PreviewPlayer.controls.currentPosition
                 } catch { }
 
                 if ($State -eq 3) {
                     $StartupClock.Restart()
                     $PreviewState.PlaybackPaused = $false
+                    if (-not $PreviewClockRunning) {
+                        & $ResetPreviewClock $MediaPosPreview $true
+                    }
+                    $PosPreview = & $GetPreviewClockPosition
                     & $UpdatePreviewPlaybackFrame $PosPreview
                 }
                 elseif ($State -eq 2) {
-                    # Pausado: preserva exatamente o quadro/legenda atual.
+                    # Pausado: congela o relógio interpolado no ponto atual.
                     $PreviewState.PlaybackPaused = $true
+                    $PosPreview = & $GetPreviewClockPosition
+                    & $ResetPreviewClock $PosPreview $false
                     & $UpdatePreviewPlaybackFrame $PosPreview
                 }
                 elseif ($State -eq 8) {
@@ -8607,6 +8703,7 @@ function Show-BurnSubtitleVideoDialog {
                     # Só trata como fim se a posição já chegou ao final da mídia.
                     $DurPreview = 0.0
                     try { $DurPreview = [double]$PreviewPlayer.currentMedia.duration } catch { }
+                    $PosPreview = & $GetPreviewClockPosition
                     if ($DurPreview -gt 0 -and $PosPreview -ge ($DurPreview - 0.35)) {
                         break
                     }
@@ -8855,6 +8952,8 @@ function Show-BurnSubtitleVideoDialog {
                 $PreviewState.PlaybackStopRequested = $false
                 $PreviewState.PlaybackMode = $true
                 $PreviewPlayer.controls.play()
+                $ResumePosPreview = & $GetPreviewClockPosition
+                & $ResetPreviewClock $ResumePosPreview $true
                 return
             }
 
@@ -8875,7 +8974,11 @@ function Show-BurnSubtitleVideoDialog {
             $PreviewState.PlaybackStopRequested = $false
             $PreviewState.PlaybackPaused = $false
             $PreviewState.PlaybackMode = $true
+
+            $StartPosPreview = 0.0
+            try { $StartPosPreview = [double]$PreviewPlayer.controls.currentPosition } catch { }
             $PreviewPlayer.controls.play()
+            & $ResetPreviewClock $StartPosPreview $true
 
             # O loop roda no mesmo Runspace do clique e atualiza legenda/relógio.
             & $RunPreviewPlaybackLoop
@@ -8890,8 +8993,9 @@ function Show-BurnSubtitleVideoDialog {
     $BtnPreviewPausar.Add_Click({
         try {
             if ($null -ne $PreviewPlayer) {
-                $PosPreview = [double]$PreviewPlayer.controls.currentPosition
+                $PosPreview = & $GetPreviewClockPosition
                 $PreviewPlayer.controls.pause()
+                & $ResetPreviewClock $PosPreview $false
                 $PreviewState.PlaybackPaused = $true
                 & $UpdatePreviewPlaybackFrame $PosPreview
             }
@@ -8900,6 +9004,14 @@ function Show-BurnSubtitleVideoDialog {
 
     $BtnPreviewParar.Add_Click({
         & $StopPreviewPlayback
+    })
+
+    $BtnPreviewVoltar5.Add_Click({
+        & $SeekPreviewPlayback -5.0
+    })
+
+    $BtnPreviewAvancar5.Add_Click({
+        & $SeekPreviewPlayback 5.0
     })
 
     $BtnCor.Add_Click({
@@ -9153,7 +9265,7 @@ function Show-BurnSubtitleVideoDialog {
 
             if ($SubtitleLayers.Count -gt 1) {
                 $Ok = Invoke-BurnMultipleSubtitlesIntoVideo `
-                    -VideoPath $VideoPath -Layers @($SubtitleLayers) -OutputPath $OutputPath `
+                    -VideoPath $VideoPath -AudioPath $OriginalAudioPath -Layers @($SubtitleLayers) -OutputPath $OutputPath `
                     -FontName ([string]$ComboFonte.Text) -FontSize ([int]$NumTamanho.Value) -MarginV ([int]$NumMargem.Value) `
                     -FontColor $PanelCor.BackColor -ShadowColor $PanelSombra.BackColor `
                     -ShadowIntensity ([int]$NumSombraIntensidade.Value) -ShadowSpread ([int]$NumSombraExpansao.Value) `
@@ -9166,7 +9278,7 @@ function Show-BurnSubtitleVideoDialog {
                 $PosAtual = if ($SubtitleLayers.Count -eq 1) { [string]$SubtitleLayers[0].Position } else { [string]$ComboPosicao.SelectedItem }
                 $SubStartAt=0.0; $SubEndAt=[double]$VideoDurationSeconds; if($SubtitleLayers.Count -eq 1){try{$SubStartAt=[double]$SubtitleLayers[0].StartAt; $SubEndAt=[double]$SubtitleLayers[0].EndAt}catch{}}
                 $Ok = Invoke-BurnSubtitlesIntoVideo `
-                    -VideoPath $VideoPath -Rows $RowsAtuais -OutputPath $OutputPath `
+                    -VideoPath $VideoPath -AudioPath $OriginalAudioPath -Rows $RowsAtuais -OutputPath $OutputPath `
                     -FontName ([string]$ComboFonte.Text) -FontSize ([int]$NumTamanho.Value) `
                     -Position $PosAtual -MarginV ([int]$NumMargem.Value) `
                     -FontColor $PanelCor.BackColor -ShadowColor $PanelSombra.BackColor `
@@ -9204,13 +9316,13 @@ function Show-BurnSubtitleVideoDialog {
         $LblPosicao, $ComboPosicao,
         $LblMargem, $NumMargem,
         $LblModoExibicao, $ComboModoExibicao, $BtnMultiplasLegendas, $LblMultiplasLegendasStatus, $LblModoAjuda,
-        $LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $LblPreviewTempo, $CheckMostrarFaixaTitulo, $LblTituloInicio, $TxtTituloInicio, $LblTituloFim, $TxtTituloFim, $LblTituloTempoInfo, $PreviewPanel,
+        $LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $BtnPreviewVoltar5, $BtnPreviewAvancar5, $LblPreviewTempo, $CheckMostrarFaixaTitulo, $LblTituloInicio, $TxtTituloInicio, $LblTituloFim, $TxtTituloFim, $LblTituloTempoInfo, $PreviewPanel,
         $LblStatus,
         $BtnGerar, $BtnFechar
     ))
 
     # Garante que os controles de reprodução permaneçam visíveis mesmo com DPI/escala do Windows.
-    foreach ($CtlPreview in @($LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $LblPreviewTempo)) {
+    foreach ($CtlPreview in @($LblPreview, $BtnPreviewTocar, $BtnPreviewPausar, $BtnPreviewParar, $BtnPreviewVoltar5, $BtnPreviewAvancar5, $LblPreviewTempo)) {
         try {
             $CtlPreview.Visible = $true
             $CtlPreview.BringToFront()
