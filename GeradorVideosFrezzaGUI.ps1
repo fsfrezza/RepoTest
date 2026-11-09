@@ -746,8 +746,8 @@ function New-Label {
 
     $Control = New-Object System.Windows.Forms.Label
     $Control.Text = $Text
-    $Control.Location = New-Object System.Drawing.Point($X, $Y)
-    $Control.Size = New-Object System.Drawing.Size($Width, 22)
+    $Control.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
+    $Control.Size = [System.Drawing.Size]::new([int]$Width, 22)
     $Control.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     return $Control
 }
@@ -762,8 +762,8 @@ function New-TextBox {
 
     $Control = New-Object System.Windows.Forms.TextBox
     $Control.Text = $Text
-    $Control.Location = New-Object System.Drawing.Point($X, $Y)
-    $Control.Size = New-Object System.Drawing.Size($Width, 24)
+    $Control.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
+    $Control.Size = [System.Drawing.Size]::new([int]$Width, 24)
     return $Control
 }
 
@@ -965,8 +965,8 @@ function Update-TabHeaderFillPanel {
             $W = 0
         }
 
-        $TabHeaderFillPanel.Location = New-Object System.Drawing.Point($X, $Y)
-        $TabHeaderFillPanel.Size = New-Object System.Drawing.Size($W, $H)
+        $TabHeaderFillPanel.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
+        $TabHeaderFillPanel.Size = [System.Drawing.Size]::new([int]$W, [int]$H)
         $TabHeaderFillPanel.BringToFront()
 
         if ($null -ne $ButtonAlternarTema) {
@@ -990,8 +990,8 @@ function Set-ControlBoundsSafe {
     if ($W -lt 1) { $W = 1 }
     if ($H -lt 1) { $H = 1 }
 
-    $Control.Location = New-Object System.Drawing.Point($X, $Y)
-    $Control.Size = New-Object System.Drawing.Size($W, $H)
+    $Control.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
+    $Control.Size = [System.Drawing.Size]::new([int]$W, [int]$H)
 }
 
 function Update-MainLayout {
@@ -8602,8 +8602,8 @@ function Show-BurnSubtitleVideoDialog {
             $SurfX = [int](($PreviewPanel.ClientSize.Width - $SurfW) / 2)
             $SurfY = [int](($PreviewPanel.ClientSize.Height - 50 - $SurfH) / 2)
             if ($SurfY -lt 8) { $SurfY = 8 }
-            $PreviewSurface.Location = New-Object System.Drawing.Point($SurfX, $SurfY)
-            $PreviewSurface.Size = New-Object System.Drawing.Size($SurfW, $SurfH)
+            $PreviewSurface.Location = [System.Drawing.Point]::new([int]$SurfX, [int]$SurfY)
+            $PreviewSurface.Size = [System.Drawing.Size]::new([int]$SurfW, [int]$SurfH)
 
             # A prévia usa a mesma escala do vídeo real.
             # Ex.: fonte 52 em vídeo 1920x1920 vira aproximadamente 9 px numa prévia de 340x340.
@@ -8633,7 +8633,7 @@ function Show-BurnSubtitleVideoDialog {
                 }
                 if ($Y -lt 0) { $Y = 0 }
                 if ($Y -gt ($PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height)) { $Y = $PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height }
-                $PreviewSubtitle.Location = New-Object System.Drawing.Point($X, $Y)
+                $PreviewSubtitle.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
             }
             else {
                 # Em posição personalizada, a personalização é apenas vertical.
@@ -8648,7 +8648,7 @@ function Show-BurnSubtitleVideoDialog {
                 if ($Y -lt 0) { $Y = 0 }
                 if ($X -gt ($PreviewSurface.ClientSize.Width - $PreviewSubtitle.Width)) { $X = $PreviewSurface.ClientSize.Width - $PreviewSubtitle.Width }
                 if ($Y -gt ($PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height)) { $Y = $PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height }
-                $PreviewSubtitle.Location = New-Object System.Drawing.Point($X, $Y)
+                $PreviewSubtitle.Location = [System.Drawing.Point]::new([int]$X, [int]$Y)
                 $PreviewState.CustomX = [int]($PreviewSubtitle.Left + ($PreviewSubtitle.Width / 2))
                 $PreviewState.CustomY = [int]($PreviewSubtitle.Top + ($PreviewSubtitle.Height / 2))
             }
@@ -8838,7 +8838,7 @@ function Show-BurnSubtitleVideoDialog {
         if ($NewTop -lt 0) { $NewTop = 0 }
         if ($NewTop -gt ($PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height)) { $NewTop = $PreviewSurface.ClientSize.Height - $PreviewSubtitle.Height }
 
-        $PreviewSubtitle.Location = New-Object System.Drawing.Point([int]$NewLeft, [int]$NewTop)
+        $PreviewSubtitle.Location = [System.Drawing.Point]::new([int]$NewLeft, [int]$NewTop)
         $PreviewState.CustomX = [int]($PreviewSurface.ClientSize.Width / 2)
         $PreviewState.CustomY = [int]($PreviewSubtitle.Top + ($PreviewSubtitle.Height / 2))
         & $SetMarginFromPreviewPosition
