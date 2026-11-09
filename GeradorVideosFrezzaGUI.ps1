@@ -6159,6 +6159,7 @@ function Fill-SubtitleGrid {
     }
 
     $GridLegendas.Refresh()
+    Update-SubtitleTimeNumericEditors
 }
 
 
@@ -10389,17 +10390,152 @@ $ColLegNumero.Name = "Numero"; $ColLegNumero.HeaderText = "#"; $ColLegNumero.Wid
 [void]$GridLegendas.Columns.Add($ColLegNumero)
 
 $ColLegInicio = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-$ColLegInicio.Name = "Inicio"; $ColLegInicio.HeaderText = "Início"; $ColLegInicio.Width = 100
+$ColLegInicio.Name = "Inicio"; $ColLegInicio.HeaderText = "Início"; $ColLegInicio.Width = 135
+$ColLegInicio.MinimumWidth = 125
 [void]$GridLegendas.Columns.Add($ColLegInicio)
 
 $ColLegFim = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-$ColLegFim.Name = "Fim"; $ColLegFim.HeaderText = "Fim"; $ColLegFim.Width = 100
+$ColLegFim.Name = "Fim"; $ColLegFim.HeaderText = "Fim"; $ColLegFim.Width = 135
+$ColLegFim.MinimumWidth = 125
 [void]$GridLegendas.Columns.Add($ColLegFim)
 
 $ColLegTexto = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-$ColLegTexto.Name = "Texto"; $ColLegTexto.HeaderText = "Texto"; $ColLegTexto.Width = 400
+$ColLegTexto.Name = "Texto"; $ColLegTexto.HeaderText = "Texto"; $ColLegTexto.Width = 360
+$ColLegTexto.MinimumWidth = 260
+$ColLegTexto.AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::Fill
 $ColLegTexto.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
 [void]$GridLegendas.Columns.Add($ColLegTexto)
+
+# Editores numéricos sobre Início/Fim da linha selecionada.
+# A grade continua armazenando strings SRT (HH:MM:SS,mmm), garantindo compatibilidade.
+$NumericLegInicio = New-Object System.Windows.Forms.NumericUpDown
+$NumericLegInicio.DecimalPlaces = 3
+$NumericLegInicio.Increment = [decimal]0.100
+$NumericLegInicio.Minimum = [decimal]0
+$NumericLegInicio.Maximum = [decimal]359999.999
+$NumericLegInicio.ThousandsSeparator = $false
+$NumericLegInicio.Visible = $false
+$NumericLegInicio.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+$NumericLegFim = New-Object System.Windows.Forms.NumericUpDown
+$NumericLegFim.DecimalPlaces = 3
+$NumericLegFim.Increment = [decimal]0.100
+$NumericLegFim.Minimum = [decimal]0
+$NumericLegFim.Maximum = [decimal]359999.999
+$NumericLegFim.ThousandsSeparator = $false
+$NumericLegFim.Visible = $false
+$NumericLegFim.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+[void]$GridLegendas.Controls.Add($NumericLegInicio)
+[void]$GridLegendas.Controls.Add($NumericLegFim)
+
+$script:LegTimeNumericUpdating = $false
+
+function Update-SubtitleTimeNumericEditors {
+    if ($null -eq $GridLegendas -or $null -eq $NumericLegInicio -or $null -eq $NumericLegFim) { return }
+
+    $Row = $GridLegendas.CurrentRow
+    if ($null -eq $Row -or $Row.IsNewRow -or -not $Row.Displayed) {
+        $NumericLegInicio.Visible = $false
+        $NumericLegFim.Visible = $false
+        return
+    }
+
+    try {
+        $InicioCell = $Row.Cells["Inicio"]
+        $FimCell = $Row.Cells["Fim"]
+        $RectInicio = $GridLegendas.GetCellDisplayRectangle($InicioCell.ColumnIndex, $Row.Index, $true)
+        $RectFim = $GridLegendas.GetCellDisplayRectangle($FimCell.ColumnIndex, $Row.Index, $true)
+
+        if ($RectInicio.Width -le 8 -or $RectFim.Width -le 8) {
+            $NumericLegInicio.Visible = $false
+            $NumericLegFim.Visible = $false
+            return
+        }
+
+        $InicioSeconds = Parse-SrtTime -Text ([string]$InicioCell.Value)
+        $FimSeconds = Parse-SrtTime -Text ([string]$FimCell.Value)
+        if ($InicioSeconds -lt 0) { $InicioSeconds = 0.0 }
+        if ($FimSeconds -lt 0) { $FimSeconds = 0.0 }
+
+        $script:LegTimeNumericUpdating = $true
+        try {
+            $NumericLegInicio.SetBounds($RectInicio.X + 1, $RectInicio.Y + 1, [Math]::Max(70, $RectInicio.Width - 2), [Math]::Max(22, $RectInicio.Height - 2))
+            $NumericLegFim.SetBounds($RectFim.X + 1, $RectFim.Y + 1, [Math]::Max(70, $RectFim.Width - 2), [Math]::Max(22, $RectFim.Height - 2))
+
+            $InicioDecimal = [decimal]([Math]::Round([double]$InicioSeconds, 3))
+            $FimDecimal = [decimal]([Math]::Round([double]$FimSeconds, 3))
+            if ($InicioDecimal -lt $NumericLegInicio.Minimum) { $InicioDecimal = $NumericLegInicio.Minimum }
+            if ($InicioDecimal -gt $NumericLegInicio.Maximum) { $InicioDecimal = $NumericLegInicio.Maximum }
+            if ($FimDecimal -lt $NumericLegFim.Minimum) { $FimDecimal = $NumericLegFim.Minimum }
+            if ($FimDecimal -gt $NumericLegFim.Maximum) { $FimDecimal = $NumericLegFim.Maximum }
+
+            $NumericLegInicio.Value = $InicioDecimal
+            $NumericLegFim.Value = $FimDecimal
+            $NumericLegInicio.Visible = $true
+            $NumericLegFim.Visible = $true
+            $NumericLegInicio.BringToFront()
+            $NumericLegFim.BringToFront()
+        }
+        finally {
+            $script:LegTimeNumericUpdating = $false
+        }
+    }
+    catch {
+        $NumericLegInicio.Visible = $false
+        $NumericLegFim.Visible = $false
+        $script:LegTimeNumericUpdating = $false
+    }
+}
+
+function Commit-SubtitleTimeNumericEditor {
+    param(
+        [System.Windows.Forms.NumericUpDown]$Editor,
+        [string]$ColumnName
+    )
+
+    if ($script:LegTimeNumericUpdating) { return }
+    if ($null -eq $GridLegendas.CurrentRow -or $GridLegendas.CurrentRow.IsNewRow) { return }
+
+    try {
+        $Seconds = [double]$Editor.Value
+        $GridLegendas.CurrentRow.Cells[$ColumnName].Value = Format-SrtTime -Seconds $Seconds
+        Update-ManualMarkerStatus
+    } catch { }
+}
+
+$NumericLegInicio.Add_ValueChanged({
+    Commit-SubtitleTimeNumericEditor -Editor $NumericLegInicio -ColumnName "Inicio"
+})
+$NumericLegFim.Add_ValueChanged({
+    Commit-SubtitleTimeNumericEditor -Editor $NumericLegFim -ColumnName "Fim"
+})
+
+$NumericLegInicio.Add_Enter({
+    try {
+        if ($GridLegendas.CurrentRow -and -not $GridLegendas.CurrentRow.IsNewRow) {
+            $GridLegendas.CurrentCell = $GridLegendas.CurrentRow.Cells["Inicio"]
+        }
+    } catch { }
+})
+$NumericLegFim.Add_Enter({
+    try {
+        if ($GridLegendas.CurrentRow -and -not $GridLegendas.CurrentRow.IsNewRow) {
+            $GridLegendas.CurrentCell = $GridLegendas.CurrentRow.Cells["Fim"]
+        }
+    } catch { }
+})
+
+$NumericLegInicio.Add_DoubleClick({
+    if ($GridLegendas.CurrentRow -and -not $GridLegendas.CurrentRow.IsNewRow) {
+        Seek-SubtitleAudioToGridTime -TimeText ([string]$GridLegendas.CurrentRow.Cells["Inicio"].Value) -RowIndex $GridLegendas.CurrentRow.Index
+    }
+})
+$NumericLegFim.Add_DoubleClick({
+    if ($GridLegendas.CurrentRow -and -not $GridLegendas.CurrentRow.IsNewRow) {
+        Seek-SubtitleAudioToGridTime -TimeText ([string]$GridLegendas.CurrentRow.Cells["Fim"].Value) -RowIndex $GridLegendas.CurrentRow.Index
+    }
+})
 
 $ButtonLegAdicionarLinha = New-Object System.Windows.Forms.Button
 $ButtonLegAdicionarLinha.Text = "(+) Adicionar`nlinha"
@@ -11627,6 +11763,32 @@ $script:LegTextPasteTextChangedHandler = [System.EventHandler]{
     }
 }
 
+$GridLegendas.Add_SelectionChanged({
+    Update-SubtitleTimeNumericEditors
+})
+
+$GridLegendas.Add_CurrentCellChanged({
+    Update-SubtitleTimeNumericEditors
+})
+
+$GridLegendas.Add_Scroll({
+    Update-SubtitleTimeNumericEditors
+})
+
+$GridLegendas.Add_Resize({
+    Update-SubtitleTimeNumericEditors
+})
+
+$GridLegendas.Add_CellValueChanged({
+    param($sender, $e)
+    if ($e.RowIndex -ge 0 -and $e.ColumnIndex -ge 0) {
+        $ColumnName = $GridLegendas.Columns[$e.ColumnIndex].Name
+        if ($ColumnName -in @("Inicio", "Fim")) {
+            Update-SubtitleTimeNumericEditors
+        }
+    }
+})
+
 $GridLegendas.Add_EditingControlShowing({
     param($sender, $e)
 
@@ -11644,8 +11806,10 @@ $GridLegendas.Add_EditingControlShowing({
     $TextBox.WordWrap = $true
 
     if ($GridLegendas.CurrentCell -and $GridLegendas.Columns[$GridLegendas.CurrentCell.ColumnIndex].Name -in @("Inicio", "Fim")) {
-        $TextBox.MaxLength = 12
-        $TextBox.add_KeyPress($script:LegTimeEditKeyPressHandler)
+        # Início/Fim são editados pelos NumericUpDown sobrepostos.
+        try { $GridLegendas.CancelEdit() | Out-Null } catch { }
+        Update-SubtitleTimeNumericEditors
+        return
     }
     elseif ($GridLegendas.CurrentCell -and $GridLegendas.Columns[$GridLegendas.CurrentCell.ColumnIndex].Name -eq "Texto") {
         $TextBox.Multiline = $true
@@ -11720,14 +11884,15 @@ $GridLegendas.Add_CellValidating({
     $ColumnName = $GridLegendas.Columns[$e.ColumnIndex].Name
     if ($ColumnName -notin @("Inicio", "Fim")) { return }
 
+    # Normalização de segurança para valores inseridos por código/colagem.
     $Normalized = Try-Normalize-SrtTimeText -Text ([string]$e.FormattedValue)
     if ($null -eq $Normalized) {
-        [System.Windows.Forms.MessageBox]::Show("Digite da esquerda para a direita: HH, HH:MM ou HH:MM:SS,mmm. Exemplos: 01 = 01:00:00,000; 00:01 = 00:01:00,000.", "Tempo inválido", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
         $e.Cancel = $true
         return
     }
 
     $GridLegendas.Rows[$e.RowIndex].Cells[$e.ColumnIndex].Value = $Normalized
+    Update-SubtitleTimeNumericEditors
 })
 
 $GridLegendas.Add_KeyDown({
