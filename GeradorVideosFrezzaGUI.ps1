@@ -10392,11 +10392,13 @@ $ColLegNumero.Name = "Numero"; $ColLegNumero.HeaderText = "#"; $ColLegNumero.Wid
 $ColLegInicio = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $ColLegInicio.Name = "Inicio"; $ColLegInicio.HeaderText = "Início"; $ColLegInicio.Width = 135
 $ColLegInicio.MinimumWidth = 125
+$ColLegInicio.DefaultCellStyle.Alignment = [System.Windows.Forms.DataGridViewContentAlignment]::MiddleCenter
 [void]$GridLegendas.Columns.Add($ColLegInicio)
 
 $ColLegFim = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $ColLegFim.Name = "Fim"; $ColLegFim.HeaderText = "Fim"; $ColLegFim.Width = 135
 $ColLegFim.MinimumWidth = 125
+$ColLegFim.DefaultCellStyle.Alignment = [System.Windows.Forms.DataGridViewContentAlignment]::MiddleCenter
 [void]$GridLegendas.Columns.Add($ColLegFim)
 
 $ColLegTexto = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
@@ -10416,6 +10418,7 @@ $NumericLegInicio.Maximum = [decimal]359999.999
 $NumericLegInicio.ThousandsSeparator = $false
 $NumericLegInicio.Visible = $false
 $NumericLegInicio.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$NumericLegInicio.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Center
 
 $NumericLegFim = New-Object System.Windows.Forms.NumericUpDown
 $NumericLegFim.DecimalPlaces = 3
@@ -10425,11 +10428,32 @@ $NumericLegFim.Maximum = [decimal]359999.999
 $NumericLegFim.ThousandsSeparator = $false
 $NumericLegFim.Visible = $false
 $NumericLegFim.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$NumericLegFim.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Center
 
 [void]$GridLegendas.Controls.Add($NumericLegInicio)
 [void]$GridLegendas.Controls.Add($NumericLegFim)
 
 $script:LegTimeNumericUpdating = $false
+
+function Set-SubtitleTimeCellTextHidden {
+    param(
+        [System.Windows.Forms.DataGridViewCell]$Cell,
+        [bool]$Hidden
+    )
+
+    if ($null -eq $Cell) { return }
+
+    try {
+        if ($Hidden) {
+            $Cell.Style.ForeColor = $Cell.Style.BackColor
+            $Cell.Style.SelectionForeColor = $Cell.Style.SelectionBackColor
+        }
+        else {
+            $Cell.Style.ForeColor = [System.Drawing.Color]::Empty
+            $Cell.Style.SelectionForeColor = [System.Drawing.Color]::Empty
+        }
+    } catch { }
+}
 
 function Update-SubtitleTimeNumericEditors {
     if ($null -eq $GridLegendas -or $null -eq $NumericLegInicio -or $null -eq $NumericLegFim) { return }
@@ -10438,6 +10462,11 @@ function Update-SubtitleTimeNumericEditors {
     if ($null -eq $Row -or $Row.IsNewRow -or -not $Row.Displayed) {
         $NumericLegInicio.Visible = $false
         $NumericLegFim.Visible = $false
+        foreach ($R in $GridLegendas.Rows) {
+            if ($R.IsNewRow) { continue }
+            Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Inicio"] -Hidden $false
+            Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Fim"] -Hidden $false
+        }
         return
     }
 
@@ -10450,6 +10479,8 @@ function Update-SubtitleTimeNumericEditors {
         if ($RectInicio.Width -le 8 -or $RectFim.Width -le 8) {
             $NumericLegInicio.Visible = $false
             $NumericLegFim.Visible = $false
+            Set-SubtitleTimeCellTextHidden -Cell $InicioCell -Hidden $false
+            Set-SubtitleTimeCellTextHidden -Cell $FimCell -Hidden $false
             return
         }
 
@@ -10460,8 +10491,19 @@ function Update-SubtitleTimeNumericEditors {
 
         $script:LegTimeNumericUpdating = $true
         try {
-            $NumericLegInicio.SetBounds($RectInicio.X + 1, $RectInicio.Y + 1, [Math]::Max(70, $RectInicio.Width - 2), [Math]::Max(22, $RectInicio.Height - 2))
-            $NumericLegFim.SetBounds($RectFim.X + 1, $RectFim.Y + 1, [Math]::Max(70, $RectFim.Width - 2), [Math]::Max(22, $RectFim.Height - 2))
+            # Centraliza o NumericUpDown dentro da célula, sem encostar nas bordas.
+            $EditorWInicio = [Math]::Max(88, [Math]::Min(($RectInicio.Width - 10), 118))
+            $EditorWFim = [Math]::Max(88, [Math]::Min(($RectFim.Width - 10), 118))
+            $EditorHInicio = [Math]::Max(22, [Math]::Min(($RectInicio.Height - 6), 26))
+            $EditorHFim = [Math]::Max(22, [Math]::Min(($RectFim.Height - 6), 26))
+
+            $EditorXInicio = $RectInicio.X + [int](($RectInicio.Width - $EditorWInicio) / 2)
+            $EditorXFim = $RectFim.X + [int](($RectFim.Width - $EditorWFim) / 2)
+            $EditorYInicio = $RectInicio.Y + [int](($RectInicio.Height - $EditorHInicio) / 2)
+            $EditorYFim = $RectFim.Y + [int](($RectFim.Height - $EditorHFim) / 2)
+
+            $NumericLegInicio.SetBounds($EditorXInicio, $EditorYInicio, $EditorWInicio, $EditorHInicio)
+            $NumericLegFim.SetBounds($EditorXFim, $EditorYFim, $EditorWFim, $EditorHFim)
 
             $InicioDecimal = [decimal]([Math]::Round([double]$InicioSeconds, 3))
             $FimDecimal = [decimal]([Math]::Round([double]$FimSeconds, 3))
@@ -10472,6 +10514,15 @@ function Update-SubtitleTimeNumericEditors {
 
             $NumericLegInicio.Value = $InicioDecimal
             $NumericLegFim.Value = $FimDecimal
+            foreach ($R in $GridLegendas.Rows) {
+                if ($R.IsNewRow) { continue }
+                Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Inicio"] -Hidden $false
+                Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Fim"] -Hidden $false
+            }
+
+            Set-SubtitleTimeCellTextHidden -Cell $InicioCell -Hidden $true
+            Set-SubtitleTimeCellTextHidden -Cell $FimCell -Hidden $true
+
             $NumericLegInicio.Visible = $true
             $NumericLegFim.Visible = $true
             $NumericLegInicio.BringToFront()
@@ -10484,6 +10535,13 @@ function Update-SubtitleTimeNumericEditors {
     catch {
         $NumericLegInicio.Visible = $false
         $NumericLegFim.Visible = $false
+        try {
+            foreach ($R in $GridLegendas.Rows) {
+                if ($R.IsNewRow) { continue }
+                Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Inicio"] -Hidden $false
+                Set-SubtitleTimeCellTextHidden -Cell $R.Cells["Fim"] -Hidden $false
+            }
+        } catch { }
         $script:LegTimeNumericUpdating = $false
     }
 }
